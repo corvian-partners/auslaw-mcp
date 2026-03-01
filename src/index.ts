@@ -7,10 +7,6 @@ import { fetchDocumentText } from "./services/fetcher.js";
 import { searchAustLii, type SearchResult } from "./services/austlii.js";
 import {
   resolveArticle,
-  resolveArticleFromUrl,
-  articleToSearchResult,
-  enrichWithJadeLinks,
-  isJadeUrl,
   buildCitationLookupUrl,
 } from "./services/jade.js";
 import {

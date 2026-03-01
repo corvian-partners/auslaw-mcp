@@ -39,7 +39,6 @@ export interface JadeArticle {
 
 // ── Constants ──────────────────────────────────────────────────────────
 
-const JADE_ARTICLE_URL = `${config.jade.baseUrl}/article`;
 const JADE_SEARCH_URL = `${config.jade.baseUrl}/search`;
 
 /** jade.io's generic/fallback title when an article isn't publicly accessible */

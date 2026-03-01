@@ -210,16 +210,59 @@ function calculateAuthorityScore(result: SearchResult): number {
 - `extractTextFromJadeHtml()` for jade.io-specific parsing
 - Updated test suite with 18 total scenarios
 
-### Should Have (Following Sprint)
-1. 🔶 Contact jade.io for search API access (Phase 2B)
-2. 🔶 Implement page number extraction (Phase 3)
-3. 🔶 Add authority-based ranking (Phase 4)
+### ✅ Phase 2B: jade.io Authenticated Fetch (COMPLETED)
 
-### Nice to Have (Future)
-1. 📋 BarNet Jade integration
-2. 📋 Citation parsing and validation
-3. 📋 Automatic pinpoint generation
-4. 📋 Related cases/legislation suggestions
+**Implemented features:**
+1. ✅ `JADE_SESSION_COOKIE` environment variable for authenticated jade.io access
+2. ✅ Cookie header injection with sanitisation (printable ASCII validation, newline rejection)
+3. ✅ Helpful 401/403 error message directing user to set the env var
+4. ✅ Rate limiting: 5 req/min for jade.io, 10 req/min for AustLII (token bucket)
+
+### ✅ Phase 3: Paragraph Block Extraction and Pinpoint Citations (COMPLETED)
+
+**Implemented features:**
+1. ✅ `ParagraphBlock` interface with `number`, `text`, and optional `pageNumber`
+2. ✅ `paragraphs` field on `FetchResponse` - populated from `[N]` markers in AustLII HTML
+3. ✅ `generate_pinpoint` MCP tool: finds paragraph by number or phrase, returns `at [N]` string
+4. ✅ Full citation composition: `"[2022] FedCFamC2F 786 at [23]"`
+
+### ✅ Phase 4: Authority-Based Result Ranking (COMPLETED)
+
+**Implemented features:**
+1. ✅ `calculateAuthorityScore()` with court hierarchy scoring (HCA=100, FCAFC=80, FCA=60, state SC=30, etc.)
+2. ✅ Reported citation bonus (+10 points)
+3. ✅ Secondary sort by authority score applied to case-name queries
+
+### ✅ Phase 5: AGLC4 Citation Service (COMPLETED)
+
+**Implemented features:**
+1. ✅ `parseCitation()` - extracts neutral and reported citations from text
+2. ✅ `formatAGLC4()` - formats citations per AGLC4 rules
+3. ✅ `validateCitation()` - HEAD-checks citation against AustLII
+4. ✅ `generatePinpoint()` - finds paragraph by number or phrase
+5. ✅ Extended `NEUTRAL_CITATION_PATTERN` to handle mixed-case court codes (e.g. FedCFamC2F)
+6. ✅ `REPORTERS` registry and `COURT_TO_AUSTLII_PATH` map added to constants
+
+### ✅ Phase 6: Security Hardening (COMPLETED)
+
+**Implemented features:**
+1. ✅ `assertFetchableUrl()` - SSRF protection: HTTPS-only, allowlisted hosts (austlii.edu.au, jade.io)
+2. ✅ Cookie sanitisation: printable ASCII validation, newline injection rejection
+3. ✅ Token bucket rate limiter: 10 req/min AustLII, 5 req/min jade.io
+4. ✅ Config DRY: all hardcoded constants removed, sourced from `config.ts`
+
+### ✅ Phase 7: New MCP Tools (COMPLETED)
+
+**Four new tools registered:**
+1. ✅ `format_citation` - formats AGLC4 citations with neutral, reported, and pinpoint components
+2. ✅ `validate_citation` - validates neutral citations against AustLII and returns canonical URL
+3. ✅ `generate_pinpoint` - fetches a judgment and generates a pinpoint citation reference
+4. ✅ `search_by_citation` - resolves a citation to a direct URL or falls back to text search
+
+### Should Have (Future)
+1. 🔶 Contact jade.io for a search API (Phase 2B search - currently only fetch is supported)
+2. 🔶 BarNet Jade integration
+3. 🔶 Related cases and legislation suggestions
 
 ## Testing Requirements
 
