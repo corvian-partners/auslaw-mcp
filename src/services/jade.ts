@@ -1,5 +1,6 @@
 import axios from "axios";
 import type { SearchResult, SearchOptions } from "./austlii.js";
+import { config } from "../config.js";
 
 /**
  * jade.io integration service
@@ -38,12 +39,8 @@ export interface JadeArticle {
 
 // ── Constants ──────────────────────────────────────────────────────────
 
-const JADE_BASE_URL = "https://jade.io";
-const JADE_ARTICLE_URL = `${JADE_BASE_URL}/article`;
-const JADE_SEARCH_URL = `${JADE_BASE_URL}/search`;
-
-const JADE_USER_AGENT = "auslaw-mcp/0.1.0 (legal research tool)";
-const JADE_TIMEOUT = 15000;
+const JADE_ARTICLE_URL = `${config.jade.baseUrl}/article`;
+const JADE_SEARCH_URL = `${config.jade.baseUrl}/search`;
 
 /** jade.io's generic/fallback title when an article isn't publicly accessible */
 const JADE_GENERIC_TITLE =
@@ -132,7 +129,7 @@ export function extractArticleId(url: string): number | undefined {
  * Constructs the canonical jade.io article URL for a given article ID
  */
 export function buildArticleUrl(articleId: number): string {
-  return `${JADE_ARTICLE_URL}/${articleId}`;
+  return `${config.jade.baseUrl}/article/${articleId}`;
 }
 
 /**
@@ -201,12 +198,12 @@ export async function resolveArticle(articleId: number): Promise<JadeArticle> {
   try {
     const response = await axios.get(url, {
       headers: {
-        "User-Agent": JADE_USER_AGENT,
+        "User-Agent": config.jade.userAgent,
         Accept: "text/html",
       },
-      timeout: JADE_TIMEOUT,
-      // jade.io pages are typically ~15KB with the GWT shell
-      maxContentLength: 50 * 1024,
+      timeout: config.jade.timeout,
+      // jade.io pages can be substantial when authenticated
+      maxContentLength: 5 * 1024 * 1024,
     });
 
     const html: string = typeof response.data === "string"
