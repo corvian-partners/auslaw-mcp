@@ -32,10 +32,10 @@ Model Context Protocol (MCP) server for Australian and New Zealand legal researc
 - ✅ **Rate limiting**: 10 req/min for AustLII, 5 req/min for jade.io
 
 ### Roadmap
-- 🔶 **jade.io search**: Pending API access from jade.io for search integration (fetch is fully supported)
-- 🔜 **BarNet Jade**: Integration with BarNet Jade databases
 
-See [ROADMAP.md](docs/ROADMAP.md) for the full development history and future plans.
+- 🔶 **jade.io search**: Pending API access from jade.io for search integration (authenticated document fetch is fully supported)
+
+See [docs/ROADMAP.md](docs/ROADMAP.md) for the full development history and future plans.
 
 ## Quick Start
 
@@ -259,7 +259,7 @@ Search Australian and New Zealand legislation.
 ```
 
 ### fetch_document_text
-Fetch full text from a case or legislation URL. Supports HTML and PDF with OCR fallback.
+Fetch full text from a case or legislation URL. Supports AustLII HTML, PDF with OCR fallback, and jade.io authenticated fetch via GWT-RPC (requires `JADE_SESSION_COOKIE`).
 
 **Parameters:**
 | Parameter | Required | Description |
@@ -398,7 +398,8 @@ src/
 │   ├── austlii.ts        # AustLII search and authority scoring
 │   ├── citation.ts       # AGLC4 citation formatting, validation, pinpoints
 │   ├── fetcher.ts        # Document retrieval (HTML, PDF, OCR, jade.io)
-│   └── jade.ts           # jade.io article resolution and enrichment
+│   ├── jade.ts           # jade.io article resolution and enrichment
+│   └── jade-gwt.ts       # GWT-RPC utilities (buildAvd2Request, encodeGwtInt, parseAvd2Response)
 ├── utils/
 │   ├── formatter.ts      # MCP response formatting (json/text/markdown/html)
 │   ├── logger.ts         # Structured levelled logging
@@ -409,7 +410,7 @@ src/
     ├── scenarios.test.ts  # End-to-end search scenarios (live network)
     ├── fixtures/          # Static HTML fixtures for deterministic tests
     ├── performance/       # Performance benchmarks
-    └── unit/              # Unit tests (~127 test cases)
+    └── unit/              # Unit tests (~163 test cases)
         ├── austlii.test.ts
         ├── austlii-mock.test.ts
         ├── citation.test.ts
@@ -419,6 +420,7 @@ src/
         ├── fetcher.test.ts
         ├── fetcher-mock.test.ts
         ├── formatter.test.ts
+        ├── jade-gwt.test.ts
         ├── logger.test.ts
         ├── rate-limiter.test.ts
         └── url-guard.test.ts
@@ -467,31 +469,34 @@ All configuration can be customized via environment variables:
 - `DEFAULT_SORT_BY` - Default sort order (auto/relevance/date)
 - `JADE_SESSION_COOKIE` - jade.io authenticated session cookie (see below)
 
-See [config.yaml](config.yaml) for defaults and `.env.example` for a template.
+See `src/config.ts` for defaults and `.env.example` for a template.
 
 ### jade.io Authenticated Access
 
 jade.io requires a subscription. To enable authenticated document fetching:
 
-1. Log in to [jade.io](https://jade.io) in your browser.
-2. Open DevTools (F12) and go to the **Application** (Chrome) or **Storage** (Firefox) tab.
-3. Under **Cookies** > `https://jade.io`, find the session cookie (typically named `BNJADEAUTH` or similar).
-4. Copy the full `Name=Value` string.
-5. Set the environment variable:
+1. Log in to [jade.io](https://jade.io) in your browser (Chrome recommended).
+2. Open DevTools (F12) and go to the **Network** tab.
+3. Navigate to any article on jade.io (e.g. `https://jade.io/article/68901`).
+4. In the Network tab, click any request to `jade.io`, then open the **Headers** pane.
+5. Under **Request Headers**, find the `Cookie` header and copy its full value.
+   The value includes multiple cookies: `IID=...; alcsessionid=...; cf_clearance=...` (and possibly others).
+6. Set the environment variable to the full cookie header value:
 
 ```bash
-export JADE_SESSION_COOKIE="BNJADEAUTH=abc123..."
+export JADE_SESSION_COOKIE="IID=abc123; alcsessionid=xyz789; cf_clearance=..."
 ```
 
-For Kubernetes deployment, add this to your ConfigMap or a Secret:
+For Kubernetes deployment, store it in a Secret (not a ConfigMap, as it is a credential):
 
-```yaml
-# k8s/configmap.yaml
-data:
-  JADE_SESSION_COOKIE: "BNJADEAUTH=abc123..."
+```bash
+kubectl create secret generic auslaw-mcp-secrets \
+  --from-literal=JADE_SESSION_COOKIE="IID=abc123; alcsessionid=xyz789; cf_clearance=..."
 ```
 
-**Security:** Treat this cookie like a password. It grants access to your jade.io subscription. Do not commit it to version control.
+Then reference it in your deployment manifest via `envFrom` or `env[].valueFrom.secretKeyRef`.
+
+**Security:** Treat this value like a password. It grants full access to your jade.io subscription. Do not commit it to version control. Rotate it if compromised.
 
 ## Data Sources and Attribution
 
@@ -517,7 +522,7 @@ Please use this tool responsibly:
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for full contribution guidelines and [AGENTS.md](AGENTS.md) for AI agent instructions.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for full contribution guidelines, [AGENTS.md](AGENTS.md) for AI agent instructions, and [SECURITY.md](SECURITY.md) for responsible disclosure.
 
 **Key principles**:
 - Primary sources only (no journal articles)

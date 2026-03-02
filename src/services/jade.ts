@@ -355,8 +355,9 @@ export async function searchJade(_query: string, _options: SearchOptions): Promi
  * requirements that avd2Request does not have.
  *
  * @param articleId - Numeric jade.io article ID
- * @param sessionCookie - Cookie header value from an authenticated session
- *   (IID=...; alcsessionid=...; cf_clearance=... - extracted via browser_cookie3)
+ * @param sessionCookie - Full Cookie header value from an authenticated session,
+ *   e.g. `IID=...; alcsessionid=...; cf_clearance=...`
+ *   Obtain via DevTools: Network tab > any jade.io request > Request Headers > Cookie.
  * @returns Raw HTML content string
  * @throws Error if the request fails or the GWT-RPC response indicates an exception
  */
