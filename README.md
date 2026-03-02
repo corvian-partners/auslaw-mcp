@@ -6,12 +6,11 @@ Model Context Protocol (MCP) server for Australian and New Zealand legal researc
   <img width="380" height="200" src="https://glama.ai/mcp/servers/@russellbrenner/auslaw-mcp/badge" alt="AusLaw MCP server" />
 </a>
 
-**Status**: ✅ Working MVP with intelligent search relevance
+**Status**: ✅ Full-featured with AGLC4 citation service, jade.io authentication, and security hardening
 
 ## Features
 
 ### Current Capabilities
-
 - ✅ **Case law search**: Natural language queries across all Australian and NZ jurisdictions
 - ✅ **All jurisdictions**: Commonwealth, all States/Territories (VIC, NSW, QLD, SA, WA, TAS, NT, ACT), and New Zealand
 - ✅ **Intelligent search relevance**: Auto-detects case name queries vs topic searches
@@ -22,119 +21,37 @@ Model Context Protocol (MCP) server for Australian and New Zealand legal researc
 - ✅ **Legislation search**: Find Australian and NZ legislation
 - ✅ **Primary sources only**: Filters out journal articles and commentary
 - ✅ **Citation extraction**: Extracts neutral citations `[2025] HCA 26` and reported citations `(2024) 350 ALR 123`
-- ✅ **jade.io search**: Search jade.io for cases by cross-referencing AustLII results with jade.io metadata
-- ✅ **jade.io citation search**: Find jade.io articles by neutral citation
-- ✅ **Multi-source merging**: Merge and deduplicate results from AustLII and jade.io (jade.io preferred)
-- ✅ **jade.io URL support**: Fetch document text from jade.io URLs (requires user access)
-- ✅ **jade.io article resolution**: Resolve jade.io article metadata by ID
-- ✅ **jade.io citation lookup**: Generate jade.io lookup URLs from neutral citations
-- ✅ **Paragraph preservation**: Keeps `[N]` paragraph numbers for pinpoint citations
+- ✅ **AGLC4 citation formatting**: Format, validate, and generate pinpoint citations per AGLC4 rules
+- ✅ **jade.io authenticated fetch**: Fetch full judgment text from jade.io using your session cookie
+- ✅ **Paragraph blocks**: `[N]` paragraph markers extracted as structured blocks for pinpoint citations
+- ✅ **Authority-based ranking**: Results ranked by court hierarchy (HCA > FCAFC > FCA > state courts)
 - ✅ **Multiple formats**: JSON, text, markdown, or HTML output
 - ✅ **Document retrieval**: Full text from HTML and PDF sources (AustLII, jade.io)
 - ✅ **OCR support**: Tesseract OCR fallback for scanned PDFs
+- ✅ **SSRF protection**: URL allowlist restricts fetches to AustLII and jade.io only
+- ✅ **Rate limiting**: 10 req/min for AustLII, 5 req/min for jade.io
 
 ### Roadmap
+- 🔶 **jade.io search**: Pending API access from jade.io for search integration (fetch is fully supported)
+- 🔜 **BarNet Jade**: Integration with BarNet Jade databases
 
-- ✅ **jade.io search**: Search jade.io by cross-referencing AustLII results with jade.io article metadata (no API required)
-- ✅ **Multi-source integration**: Merge and deduplicate results from AustLII and jade.io
-- 🔜 **Page numbers**: Will extract page numbers from reported versions
-- 🔜 **Authority ranking**: Will prioritise reported over unreported judgements
-
-See [ROADMAP.md](docs/ROADMAP.md) for detailed development plans.
+See [ROADMAP.md](docs/ROADMAP.md) for the full development history and future plans.
 
 ## Quick Start
 
-### 1. Clone and Build
+### Local Development
 
 ```bash
 git clone https://github.com/russellbrenner/auslaw-mcp.git
 cd auslaw-mcp
 npm install
+npm run dev  # hot reload for local development
+```
+
+To build for production:
+```bash
 npm run build
-```
-
-For local development with hot reload:
-
-```bash
-npm run dev
-```
-
-### 2. Configure Your MCP Client
-
-> **Important**: You must build the project (`npm run build`) before configuring any client. All clients launch the compiled `dist/index.js`.
-
-#### Claude Desktop
-
-Edit your Claude Desktop configuration file:
-
-| OS      | Path                                                              |
-| ------- | ----------------------------------------------------------------- |
-| macOS   | `~/Library/Application Support/Claude/claude_desktop_config.json` |
-| Windows | `%APPDATA%\Claude\claude_desktop_config.json`                     |
-| Linux   | `~/.config/Claude/claude_desktop_config.json`                     |
-
-Add the following (replace `/path/to/auslaw-mcp` with your actual install path):
-
-```json
-{
-  "mcpServers": {
-    "auslaw-mcp": {
-      "command": "node",
-      "args": ["/path/to/auslaw-mcp/dist/index.js"]
-    }
-  }
-}
-```
-
-Restart Claude Desktop after saving.
-
-#### Claude Code (CLI)
-
-Register the MCP server using the `claude mcp add` command:
-
-```bash
-claude mcp add auslaw-mcp node /path/to/auslaw-mcp/dist/index.js
-```
-
-To verify it was added:
-
-```bash
-claude mcp list
-```
-
-#### Codex (OpenAI CLI)
-
-Add auslaw-mcp as a server in your Codex MCP configuration file (`~/.codex/config.json` or project-level `.codex/config.json`):
-
-```json
-{
-  "mcpServers": {
-    "auslaw-mcp": {
-      "command": "node",
-      "args": ["/path/to/auslaw-mcp/dist/index.js"]
-    }
-  }
-}
-```
-
-#### Cursor
-
-Open **Settings → MCP** and add a new server with:
-
-- **Name**: `auslaw-mcp`
-- **Command**: `node /path/to/auslaw-mcp/dist/index.js`
-
-Or edit `.cursor/mcp.json` in your project root:
-
-```json
-{
-  "mcpServers": {
-    "auslaw-mcp": {
-      "command": "node",
-      "args": ["/path/to/auslaw-mcp/dist/index.js"]
-    }
-  }
-}
+npm start
 ```
 
 ### Docker Deployment
@@ -164,6 +81,23 @@ kubectl apply -f k8s/
 ```
 
 See [k8s/README.md](k8s/README.md) for complete Kubernetes deployment guide.
+
+## MCP Registration
+Configure your MCP-compatible client (eg. Claude Desktop, Cursor) to launch the compiled server.
+
+For Claude Desktop, edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
+```json
+{
+  "mcpServers": {
+    "auslaw-mcp": {
+      "command": "node",
+      "args": ["/path/to/auslaw-mcp/dist/index.js"]
+    }
+  }
+}
+```
+
+Replace `/path/to/auslaw-mcp` with the actual path to your installation.
 
 ## Example Queries for AI Assistants
 
@@ -227,14 +161,6 @@ Once the MCP is connected, you can ask an AI assistant like Claude natural langu
 
 > "Find all High Court cases about constitutional implied freedoms in the last 10 years and identify the key principles"
 
-### jade.io Search
-
-> "Search jade.io for cases about negligence duty of care"
-
-> "Find the jade.io article for [2008] NSWSC 323"
-
-> "Search for Mabo v Queensland and include jade.io results"
-
 ### Document Retrieval
 
 > "Fetch the full text of [2024] HCA 1 and summarise the key holdings"
@@ -244,7 +170,6 @@ Once the MCP is connected, you can ask an AI assistant like Claude natural langu
 ## Available Tools
 
 ### search_cases
-
 Search Australian and New Zealand case law.
 
 **Parameters:**
@@ -256,7 +181,6 @@ Search Australian and New Zealand case law.
 | `sortBy` | No | `auto` (default), `relevance`, or `date` |
 | `method` | No | `auto`, `title`, `phrase`, `all`, `any`, `near`, `boolean` |
 | `offset` | No | Skip first N results for pagination (e.g., 50 for page 2) |
-| `includeJade` | No | Include jade.io results (merged and deduplicated) |
 | `format` | No | `json` (default), `text`, `markdown`, `html` |
 
 **Search Methods:**
@@ -273,7 +197,6 @@ Search Australian and New Zealand case law.
 **Examples:**
 
 Find a specific case:
-
 ```json
 {
   "query": "Donoghue v Stevenson",
@@ -283,7 +206,6 @@ Find a specific case:
 ```
 
 Recent NSW cases on a topic:
-
 ```json
 {
   "query": "adverse possession",
@@ -294,7 +216,6 @@ Recent NSW cases on a topic:
 ```
 
 Exact phrase search:
-
 ```json
 {
   "query": "duty of care",
@@ -305,7 +226,6 @@ Exact phrase search:
 ```
 
 Pagination (get results 51-100):
-
 ```json
 {
   "query": "contract breach",
@@ -315,7 +235,6 @@ Pagination (get results 51-100):
 ```
 
 ### search_legislation
-
 Search Australian and New Zealand legislation.
 
 **Parameters:**
@@ -327,11 +246,9 @@ Search Australian and New Zealand legislation.
 | `sortBy` | No | `auto` (default), `relevance`, or `date` |
 | `method` | No | `auto`, `title`, `phrase`, `all`, `any`, `near`, `legis`, `boolean` |
 | `offset` | No | Skip first N results for pagination |
-| `includeJade` | No | Include jade.io results (merged and deduplicated) |
 | `format` | No | `json` (default), `text`, `markdown`, `html` |
 
 **Example:**
-
 ```json
 {
   "query": "Privacy Act",
@@ -341,48 +258,7 @@ Search Australian and New Zealand legislation.
 }
 ```
 
-### search_jade
-
-Search jade.io for Australian case law by cross-referencing AustLII results with jade.io article metadata. Works without jade.io API access.
-
-**Parameters:**
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `query` | Yes | Search query (e.g., "negligence duty of care") |
-| `jurisdiction` | No | Filter: `cth`, `vic`, `nsw`, `qld`, `sa`, `wa`, `tas`, `nt`, `act`, `federal`, `nz`, `other` |
-| `limit` | No | Max results 1-50 (default 10) |
-| `sortBy` | No | `auto` (default), `relevance`, or `date` |
-| `type` | No | `case` or `legislation` |
-
-**Example:**
-
-```json
-{
-  "query": "Mabo v Queensland",
-  "jurisdiction": "cth",
-  "limit": 5
-}
-```
-
-### search_jade_by_citation
-
-Find a jade.io article by neutral citation. Resolves the citation to jade.io article metadata.
-
-**Parameters:**
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `citation` | Yes | Neutral citation (e.g., `[2008] NSWSC 323`) |
-
-**Example:**
-
-```json
-{
-  "citation": "[2008] NSWSC 323"
-}
-```
-
 ### fetch_document_text
-
 Fetch full text from a case or legislation URL. Supports HTML and PDF with OCR fallback.
 
 **Parameters:**
@@ -392,72 +268,118 @@ Fetch full text from a case or legislation URL. Supports HTML and PDF with OCR f
 | `format` | No | `json` (default), `text`, `markdown`, `html` |
 
 **Example:**
-
 ```json
 {
   "url": "https://www.austlii.edu.au/cgi-bin/viewdoc/au/cases/cth/HCA/1992/23.html"
 }
 ```
 
-### resolve_jade_article
-
-Resolve metadata for a jade.io article by its numeric ID. Returns case name, neutral citation, jurisdiction, and year.
+### format_citation
+Format an Australian case citation per AGLC4 rules.
 
 **Parameters:**
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `articleId` | Yes | jade.io article numeric ID (positive integer) |
+| `title` | Yes | Case name, e.g. `Mabo v Queensland (No 2)` |
+| `neutralCitation` | No | Neutral citation, e.g. `[1992] HCA 23` |
+| `reportedCitation` | No | Reported citation, e.g. `(1992) 175 CLR 1` |
+| `pinpoint` | No | Pinpoint reference, e.g. `[20]` |
+| `style` | No | `combined` (default), `neutral`, or `reported` |
 
 **Example:**
-
 ```json
 {
-  "articleId": 68901
+  "title": "Mabo v Queensland (No 2)",
+  "neutralCitation": "[1992] HCA 23",
+  "reportedCitation": "(1992) 175 CLR 1",
+  "pinpoint": "[64]"
 }
 ```
+
+**Output:** `Mabo v Queensland (No 2) [1992] HCA 23, (1992) 175 CLR 1 at [64]`
+
+### validate_citation
+Validate a neutral citation by checking it exists on AustLII.
+
+**Parameters:**
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `citation` | Yes | Neutral citation to validate, e.g. `[1992] HCA 23` |
+
+**Returns:** `{ valid, canonicalCitation, austliiUrl, message }`
+
+### generate_pinpoint
+Fetch a judgment from AustLII and generate a pinpoint citation to a specific paragraph.
+
+**Parameters:**
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `url` | Yes | AustLII document URL |
+| `paragraphNumber` | No* | Paragraph number to locate |
+| `phrase` | No* | Phrase to search for within paragraphs |
+| `caseCitation` | No | Case citation to prepend (e.g. `[1992] HCA 23`) |
+
+*At least one of `paragraphNumber` or `phrase` is required.
+
+**Example:**
+```json
+{
+  "url": "https://www.austlii.edu.au/cgi-bin/viewdoc/au/cases/cth/HCA/1992/23.html",
+  "phrase": "native title",
+  "caseCitation": "[1992] HCA 23"
+}
+```
+
+**Output:** `{ paragraphNumber: 64, pinpointString: "at [64]", fullCitation: "[1992] HCA 23 at [64]" }`
+
+### search_by_citation
+Find a case by its citation. If a neutral citation is detected, validates against AustLII directly; otherwise falls back to text search.
+
+**Parameters:**
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `citation` | Yes | Citation or case name, e.g. `[1992] HCA 23` or `Mabo v Queensland` |
+| `format` | No | `json` (default), `text`, `markdown`, `html` |
+
+### resolve_jade_article
+Resolve metadata for a jade.io article by its numeric ID.
+
+**Parameters:**
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `articleId` | Yes | jade.io article ID (integer) |
 
 ### jade_citation_lookup
-
-Generate a jade.io lookup URL for a given neutral citation. Returns a URL that opens jade.io with the citation search.
+Generate a jade.io lookup URL for a given neutral citation.
 
 **Parameters:**
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `citation` | Yes | Neutral citation string (e.g., `[2008] NSWSC 323`) |
-
-**Example:**
-
-```json
-{
-  "citation": "[2008] NSWSC 323"
-}
-```
+| `citation` | Yes | Neutral citation, e.g. `[2008] NSWSC 323` |
 
 ## Jurisdictions
 
-| Code      | Jurisdiction                   |
-| --------- | ------------------------------ |
-| `cth`     | Commonwealth of Australia      |
+| Code | Jurisdiction |
+|------|-------------|
+| `cth` | Commonwealth of Australia |
 | `federal` | Federal courts (alias for cth) |
-| `vic`     | Victoria                       |
-| `nsw`     | New South Wales                |
-| `qld`     | Queensland                     |
-| `sa`      | South Australia                |
-| `wa`      | Western Australia              |
-| `tas`     | Tasmania                       |
-| `nt`      | Northern Territory             |
-| `act`     | Australian Capital Territory   |
-| `nz`      | New Zealand                    |
-| `other`   | All jurisdictions (no filter)  |
+| `vic` | Victoria |
+| `nsw` | New South Wales |
+| `qld` | Queensland |
+| `sa` | South Australia |
+| `wa` | Western Australia |
+| `tas` | Tasmania |
+| `nt` | Northern Territory |
+| `act` | Australian Capital Territory |
+| `nz` | New Zealand |
+| `other` | All jurisdictions (no filter) |
 
 ## Running Tests
-
 ```bash
 npm test
 ```
 
 Test scenarios include:
-
 1. **Negligence and duty of care** - Personal injury law searches
 2. **Contract disputes** - Commercial law and breach of contract
 3. **Constitutional law** - High Court constitutional matters
@@ -468,48 +390,33 @@ Test scenarios include:
 
 ```
 src/
-├── services
-│   ├── austlii.ts # AustLII search integration
-│   ├── fetcher.ts # Document text retrieval (HTML/PDF/OCR)
-│   └── jade.ts # jade.io article resolution & citation lookup
-├── test
-│   ├── fixtures
-│   │   ├── austlii-judgment.html
-│   │   ├── austlii-search-response.html
-│   │   ├── index.ts
-│   │   └── jade-article-response.html
-│   ├── performance
-│   │   └── search-performance.test.ts
-│   ├── unit
-│   │   ├── austlii-mock.test.ts
-│   │   ├── austlii.test.ts
-│   │   ├── config.test.ts
-│   │   ├── constants.test.ts
-│   │   ├── errors.test.ts
-│   │   ├── fetcher-mock.test.ts
-│   │   ├── formatter.test.ts
-│   │   └── logger.test.ts
-│   ├── jade.test.ts
-│   └── scenarios.test.ts
-├── utils
-│   ├── formatter.ts # Output formatting (JSON/text/markdown/html)
-│   └── logger.ts # Logging utility
-├── config.ts # Configuration management
-├── constants.ts # Shared constants
-├── errors.ts # Error types and handling
-└── index.ts # MCP server & tool registration
+├── index.ts              # MCP server & tool registration (9 tools)
+├── config.ts             # Configuration management
+├── constants.ts          # Citation patterns, court codes, reporters
+├── services/
+│   ├── austlii.ts        # AustLII search and authority scoring
+│   ├── citation.ts       # AGLC4 citation formatting, validation, pinpoints
+│   ├── fetcher.ts        # Document retrieval (HTML, PDF, OCR, jade.io)
+│   └── jade.ts           # jade.io article resolution and enrichment
+├── utils/
+│   ├── formatter.ts      # MCP response formatting (json/text/markdown/html)
+│   ├── rate-limiter.ts   # Token bucket rate limiter (AustLII, jade.io)
+│   └── url-guard.ts      # SSRF protection (HTTPS-only, allowlisted hosts)
+└── test/
+    ├── jade.test.ts       # jade.io integration tests
+    ├── scenarios.test.ts  # End-to-end search scenarios (live network)
+    └── unit/              # Unit tests (153 tests, 79% coverage)
+        ├── austlii.test.ts
+        ├── citation.test.ts
+        ├── config.test.ts
+        ├── fetcher.test.ts
+        ├── formatter.test.ts
+        ├── rate-limiter.test.ts
+        └── url-guard.test.ts
 
-docs/
-├── architecture.md # Architecture documentation
-├── DOCKER.md # Docker deployment guide
-└── ROADMAP.md # Development roadmap
-
-k8s/
-├── configmap.yaml # Configuration for k8s
-├── deployment.yaml # Deployment specification
-├── namespace.yaml # Kubernetes namespace
-├── README.md # Kubernetes deployment guide
-└── service.yaml # Service definition
+plans/                    # Session implementation plans (git-tracked)
+k8s/                      # Kubernetes deployment manifests
+docs/                     # Architecture, Docker, and roadmap docs
 ```
 
 ## Deployment
@@ -517,7 +424,6 @@ k8s/
 ### Docker
 
 Quick start:
-
 ```bash
 ./build.sh              # Build Docker image
 docker-compose up       # Run locally
@@ -528,7 +434,6 @@ See [docs/DOCKER.md](docs/DOCKER.md) for detailed Docker deployment instructions
 ### Kubernetes (k3s)
 
 Quick start:
-
 ```bash
 ./build.sh              # Build and export image
 # Import to k3s nodes (see k8s/README.md)
@@ -545,41 +450,57 @@ All configuration can be customized via environment variables:
 - `AUSTLII_REFERER` - Referer header
 - `AUSTLII_USER_AGENT` - User agent string
 - `AUSTLII_TIMEOUT` - Request timeout (ms)
-- `JADE_BASE_URL` - jade.io base URL
-- `JADE_USER_AGENT` - jade.io user agent string
-- `JADE_TIMEOUT` - jade.io request timeout (ms)
 - `OCR_LANGUAGE` - Tesseract OCR language
 - `OCR_OEM`, `OCR_PSM` - OCR engine settings
 - `DEFAULT_SEARCH_LIMIT` - Default search results
 - `MAX_SEARCH_LIMIT` - Maximum search results
 - `DEFAULT_OUTPUT_FORMAT` - Default format (json/text/markdown/html)
 - `DEFAULT_SORT_BY` - Default sort order (auto/relevance/date)
-- `LOG_LEVEL` - Logging level (0=DEBUG, 1=INFO, 2=WARN, 3=ERROR)
+- `JADE_SESSION_COOKIE` - jade.io authenticated session cookie (see below)
 
 See [config.yaml](config.yaml) for defaults and `.env.example` for a template.
+
+### jade.io Authenticated Access
+
+jade.io requires a subscription. To enable authenticated document fetching:
+
+1. Log in to [jade.io](https://jade.io) in your browser.
+2. Open DevTools (F12) and go to the **Application** (Chrome) or **Storage** (Firefox) tab.
+3. Under **Cookies** > `https://jade.io`, find the session cookie (typically named `BNJADEAUTH` or similar).
+4. Copy the full `Name=Value` string.
+5. Set the environment variable:
+
+```bash
+export JADE_SESSION_COOKIE="BNJADEAUTH=abc123..."
+```
+
+For Kubernetes deployment, add this to your ConfigMap or a Secret:
+
+```yaml
+# k8s/configmap.yaml
+data:
+  JADE_SESSION_COOKIE: "BNJADEAUTH=abc123..."
+```
+
+**Security:** Treat this cookie like a password. It grants access to your jade.io subscription. Do not commit it to version control.
 
 ## Data Sources and Attribution
 
 This project retrieves legal data from publicly accessible databases.
 
 ### AustLII (Australasian Legal Information Institute)
-
 - Website: https://www.austlii.edu.au
 - Terms of Use: https://www.austlii.edu.au/austlii/terms.html
 - AustLII provides free access to Australian and New Zealand legal materials
 
 ### jade.io
-
-- Search integration works by cross-referencing AustLII results with jade.io article metadata
-- Maximum 5 concurrent jade.io article resolutions to avoid overwhelming the server
-- Users must have their own jade.io subscription for full document access
+- Users must have their own jade.io subscription
 - This tool does not bypass jade.io's access controls
 - Respects jade.io's terms of service
 
 ### Fair Use
 
 Please use this tool responsibly:
-
 - Implement reasonable delays between requests
 - Cache results when appropriate
 - Don't overload public legal databases
@@ -590,7 +511,6 @@ Please use this tool responsibly:
 See [CONTRIBUTING.md](CONTRIBUTING.md) for full contribution guidelines and [AGENTS.md](AGENTS.md) for AI agent instructions.
 
 **Key principles**:
-
 - Primary sources only (no journal articles)
 - Citation accuracy is paramount
 - All tests must pass before committing
