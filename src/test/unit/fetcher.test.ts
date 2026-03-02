@@ -10,6 +10,7 @@ const mockConfig = vi.hoisted(() => ({
     userAgent: "test-agent",
     timeout: 5000,
     sessionCookie: undefined as string | undefined,
+    baseUrl: "https://jade.io",
   },
   ocr: { language: "eng", oem: 1, psm: 3 },
   austlii: { searchBase: "", referer: "", userAgent: "", timeout: 5000 },
@@ -36,22 +37,59 @@ describe("fetchDocumentText", () => {
     mockConfig.jade.sessionCookie = undefined;
   });
 
-  it("throws immediately for jade.io URLs without making any HTTP request", async () => {
-    // jade.io is a GWT SPA; HTTP fetch only returns a JS bootstrap shell, not judgment text.
-    // We reject early so callers get a clear error rather than empty content.
+  it("throws for jade.io URLs when no session cookie is configured", async () => {
     await expect(fetchDocumentText("https://jade.io/article/68901")).rejects.toThrow(
-      /fetch_document_text does not support jade\.io/i,
+      /JADE_SESSION_COOKIE/i,
     );
     expect(axios.get).not.toHaveBeenCalled();
+    expect(axios.post).not.toHaveBeenCalled();
   });
 
-  it("throws immediately for jade.io URLs regardless of session cookie config", async () => {
-    mockConfig.jade.sessionCookie = "alcsessionid=abc123";
+  it("calls jadeService.do via POST with avd2Request when session cookie is configured", async () => {
+    mockConfig.jade.sessionCookie = "IID=abc; alcsessionid=xyz";
 
-    await expect(fetchDocumentText("https://jade.io/article/12345")).rejects.toThrow(
-      /GWT single-page application/i,
+    const gwtHtml = "<DIV><P>[1] Judgment text here.</P></DIV>";
+    // avd2Response format: [integers..., [string_table], 4, 7]
+    vi.mocked(axios.post).mockResolvedValueOnce({
+      data: `//OK[0,-2,0,["Type/123","${gwtHtml}"],4,7]`,
+      status: 200,
+      headers: {},
+    });
+
+    const result = await fetchDocumentText("https://jade.io/article/67401");
+
+    expect(axios.post).toHaveBeenCalledWith(
+      "https://jade.io/jadeService.do",
+      expect.stringContaining("avd2Request"),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "Content-Type": "text/x-gwt-rpc; charset=UTF-8",
+          "Cookie": "IID=abc; alcsessionid=xyz",
+        }),
+      }),
     );
-    expect(axios.get).not.toHaveBeenCalled();
+    expect(result.text).toContain("Judgment text");
+    expect(result.contentType).toBe("text/html");
+    expect(result.sourceUrl).toBe("https://jade.io/article/67401");
+  });
+
+  it("sends GWT-encoded article ID in the avd2Request POST body", async () => {
+    mockConfig.jade.sessionCookie = "alcsessionid=test";
+
+    const gwtHtml = "<DIV>content</DIV>";
+    vi.mocked(axios.post).mockResolvedValueOnce({
+      data: `//OK[0,-2,0,["Type/123","${gwtHtml}"],4,7]`,
+      status: 200,
+      headers: {},
+    });
+
+    await fetchDocumentText("https://jade.io/article/67401");
+
+    const postBody = vi.mocked(axios.post).mock.calls[0]?.[1] as string;
+    // Article 67401 encodes as "QdJ" in GWT integer encoding
+    expect(postBody).toContain("QdJ");
+    // Should NOT contain the raw integer
+    expect(postBody).not.toMatch(/\|67401\|/);
   });
 
   it("extracts paragraph blocks from AustLII HTML with [N] markers", async () => {

@@ -1,6 +1,13 @@
 import axios from "axios";
 import type { SearchResult, SearchOptions } from "./austlii.js";
 import { config } from "../config.js";
+import {
+  buildAvd2Request,
+  parseAvd2Response,
+  JADE_MODULE_BASE,
+  JADE_PERMUTATION,
+  AVD2_STRONG_NAME,
+} from "./jade-gwt.js";
 
 /**
  * jade.io integration service
@@ -329,4 +336,52 @@ export async function searchJade(_query: string, _options: SearchOptions): Promi
   // This function is a placeholder for future integration.
   // When API access is available, implement search here.
   return [];
+}
+
+// ── GWT-RPC Content Fetching ───────────────────────────────────────────
+
+/**
+ * Fetches the full HTML content of a jade.io article via the GWT-RPC API.
+ *
+ * Calls ArticleViewRemoteService.avd2Request() directly, bypassing the GWT
+ * JavaScript client. This requires a valid authenticated session cookie.
+ *
+ * The avd2Request method (discovered via SPA navigation interception, 2026-03-02)
+ * is the primary content-loading method used by jade.io's GWT app. It reliably
+ * returns full article HTML including paragraph anchors (bnj_a_{id}_sr_{N}).
+ *
+ * Note: the earlier getInitialContent method (captured via Proxyman HAR) returns
+ * empty body when called directly, likely due to server-side session state
+ * requirements that avd2Request does not have.
+ *
+ * @param articleId - Numeric jade.io article ID
+ * @param sessionCookie - Cookie header value from an authenticated session
+ *   (IID=...; alcsessionid=...; cf_clearance=... - extracted via browser_cookie3)
+ * @returns Raw HTML content string
+ * @throws Error if the request fails or the GWT-RPC response indicates an exception
+ */
+export async function fetchJadeArticleContent(
+  articleId: number,
+  sessionCookie: string,
+): Promise<string> {
+  const url = `${config.jade.baseUrl}/jadeService.do`;
+  const requestBody = buildAvd2Request(articleId);
+
+  const response = await axios.post(url, requestBody, {
+    headers: {
+      "Content-Type": "text/x-gwt-rpc; charset=UTF-8",
+      "X-GWT-Module-Base": JADE_MODULE_BASE,
+      "X-GWT-Permutation": JADE_PERMUTATION,
+      Origin: "https://jade.io",
+      Referer: `https://jade.io/article/${articleId}`,
+      "User-Agent": config.jade.userAgent,
+      Cookie: sessionCookie,
+    },
+    timeout: config.jade.timeout,
+    responseType: "text",
+    // avd2Request responses can be large (700KB+ for HCA decisions)
+    maxContentLength: 5 * 1024 * 1024,
+  });
+
+  return parseAvd2Response(response.data as string);
 }

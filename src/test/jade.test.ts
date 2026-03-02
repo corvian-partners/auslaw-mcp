@@ -18,6 +18,9 @@ import type { SearchResult } from "../services/austlii.js";
 // Skip live network tests in CI to prevent flaky failures
 const describeLive = process.env.CI ? describe.skip : describe;
 
+// Authenticated GWT-RPC tests — require JADE_SESSION_COOKIE env var
+const describeAuth = process.env.CI || !process.env.JADE_SESSION_COOKIE ? describe.skip : describe;
+
 // ── Unit tests (no network) ───────────────────────────────────────────
 
 describe("jade.io URL utilities", () => {
@@ -389,5 +392,36 @@ describeLive("jade.io article resolution (live)", () => {
     expect(result.url).toBe("https://jade.io/article/68901");
     expect(result.neutralCitation).toBe("[2008] NSWSC 323");
     expect(result.title).toContain("Macquarie");
+  }, 30000);
+});
+
+// ── Authenticated GWT-RPC content fetching (requires JADE_SESSION_COOKIE) ──
+
+describeAuth("jade.io GWT-RPC content fetch (authenticated, live)", () => {
+  /**
+   * Article 67401 = Kosciusko Thredbo Pty Ltd v Commissioner of Taxation [1987] HCA 64
+   * Verified via browser SPA interception - avd2Request returns full HTML.
+   */
+  it("returns substantial judgment HTML for a known article", async () => {
+    const { fetchJadeArticleContent } = await import("../services/jade.js");
+    const sessionCookie = process.env.JADE_SESSION_COOKIE!;
+
+    const html = await fetchJadeArticleContent(67401, sessionCookie);
+
+    expect(typeof html).toBe("string");
+    expect(html.length).toBeGreaterThan(1000);
+    // Content should be HTML markup, not a GWT bootstrap shell
+    expect(html).toMatch(/<div|<DIV|<p|<P/i);
+    // Should NOT be the JS bootstrap shell
+    expect(html).not.toContain("gwt.js");
+    expect(html).not.toContain("BarNet Jade - Find recent");
+  }, 30000);
+
+  it("content contains case-specific anchors for article 67401", async () => {
+    const { fetchJadeArticleContent } = await import("../services/jade.js");
+    const html = await fetchJadeArticleContent(67401, process.env.JADE_SESSION_COOKIE!);
+
+    // jade.io embeds article-specific anchor IDs like bnj_a_{articleId}_sr_{N}
+    expect(html).toContain("bnj_a_67401");
   }, 30000);
 });

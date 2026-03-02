@@ -7,7 +7,7 @@ import * as tmp from "tmp";
 import * as fs from "fs/promises";
 import { config } from "../config.js";
 import { MAX_CONTENT_LENGTH } from "../constants.js";
-import { isJadeUrl } from "./jade.js";
+import { isJadeUrl, extractArticleId, fetchJadeArticleContent } from "./jade.js";
 import { assertFetchableUrl } from "../utils/url-guard.js";
 import { austliiRateLimiter, jadeRateLimiter } from "../utils/rate-limiter.js";
 
@@ -222,39 +222,50 @@ function extractParagraphBlocks(html: string): ParagraphBlock[] {
 export async function fetchDocumentText(url: string): Promise<FetchResponse> {
   assertFetchableUrl(url);
 
-  // jade.io is a GWT single-page application. The initial HTTP response is a
-  // ~12KB JavaScript bootstrap shell — judgment text is rendered client-side
-  // and is not accessible via a simple HTTP fetch + HTML extraction. Returning
-  // empty content silently is misleading, so we fail fast with a clear message.
-  // See ROADMAP.md for the planned headless-browser / API approach.
+  // jade.io uses GWT-RPC — content is loaded client-side and not available
+  // via a plain HTTP fetch. Route through the direct GWT-RPC API when a
+  // session cookie is configured; reject with a helpful message otherwise.
   if (isJadeUrl(url)) {
-    throw new Error(
-      "fetch_document_text does not support jade.io URLs: jade.io renders content " +
-        "via a GWT single-page application and full text is not available in the " +
-        "initial HTTP response. Use AustLII URLs for full text fetching, or see " +
-        "ROADMAP.md for the planned jade.io headless-browser integration.",
-    );
+    if (!config.jade.sessionCookie) {
+      throw new Error(
+        "fetch_document_text requires JADE_SESSION_COOKIE for jade.io URLs. " +
+          "jade.io renders content via a GWT single-page application. " +
+          "Set JADE_SESSION_COOKIE in your environment (see README for extraction instructions).",
+      );
+    }
+
+    const articleId = extractArticleId(url);
+    if (!articleId) {
+      throw new Error(`Could not extract article ID from jade.io URL: ${url}`);
+    }
+
+    await jadeRateLimiter.throttle();
+    const html = await fetchJadeArticleContent(articleId, config.jade.sessionCookie);
+    const text = extractTextFromHtml(html, url);
+    const paragraphs = extractParagraphBlocks(html);
+    const cleanedHtml = cleanHtmlForOutput(html);
+
+    return {
+      text,
+      html: cleanedHtml,
+      contentType: "text/html",
+      sourceUrl: url,
+      ocrUsed: false,
+      metadata: {
+        contentLength: String(html.length),
+        contentType: "text/html",
+        source: "jade-gwt-rpc",
+      },
+      paragraphs,
+    };
   }
 
   try {
-    // Apply rate limiting based on host
-    if (isJadeUrl(url)) {
-      await jadeRateLimiter.throttle();
-    } else {
-      await austliiRateLimiter.throttle();
-    }
+    await austliiRateLimiter.throttle();
 
     const headers: Record<string, string> = {
       "User-Agent": config.jade.userAgent,
     };
-
-    if (isJadeUrl(url) && config.jade.sessionCookie) {
-      const cookie = config.jade.sessionCookie;
-      if (!/^[\x20-\x7E]+$/.test(cookie) || /[\r\n]/.test(cookie)) {
-        throw new Error("JADE_SESSION_COOKIE contains invalid characters");
-      }
-      headers["Cookie"] = cookie;
-    }
 
     const response = await axios.get(url, {
       responseType: "arraybuffer",
