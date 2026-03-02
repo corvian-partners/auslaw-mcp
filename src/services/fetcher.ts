@@ -221,6 +221,21 @@ function extractParagraphBlocks(html: string): ParagraphBlock[] {
  */
 export async function fetchDocumentText(url: string): Promise<FetchResponse> {
   assertFetchableUrl(url);
+
+  // jade.io is a GWT single-page application. The initial HTTP response is a
+  // ~12KB JavaScript bootstrap shell — judgment text is rendered client-side
+  // and is not accessible via a simple HTTP fetch + HTML extraction. Returning
+  // empty content silently is misleading, so we fail fast with a clear message.
+  // See ROADMAP.md for the planned headless-browser / API approach.
+  if (isJadeUrl(url)) {
+    throw new Error(
+      "fetch_document_text does not support jade.io URLs: jade.io renders content " +
+        "via a GWT single-page application and full text is not available in the " +
+        "initial HTTP response. Use AustLII URLs for full text fetching, or see " +
+        "ROADMAP.md for the planned jade.io headless-browser integration.",
+    );
+  }
+
   try {
     // Apply rate limiting based on host
     if (isJadeUrl(url)) {

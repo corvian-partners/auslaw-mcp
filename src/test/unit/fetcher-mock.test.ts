@@ -16,6 +16,14 @@ describe("fetchDocumentText (mocked)", () => {
     mockedAxios.isAxiosError.mockReturnValue(false);
   });
 
+  it("should throw a descriptive error for jade.io URLs instead of returning empty content", async () => {
+    // jade.io is a GWT SPA — HTTP fetch returns a JS bootstrap shell, not judgment text.
+    // Silently returning empty content is misleading; we want a clear, actionable error.
+    await expect(
+      fetchDocumentText("https://jade.io/article/67401"),
+    ).rejects.toThrow(/jade\.io.*not supported|fetch_document_text.*jade\.io/i);
+  });
+
   it("should extract text from HTML content", async () => {
     mockedAxios.get.mockResolvedValue({
       data: Buffer.from(AUSTLII_JUDGMENT_HTML),

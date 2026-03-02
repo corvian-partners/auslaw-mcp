@@ -36,35 +36,22 @@ describe("fetchDocumentText", () => {
     mockConfig.jade.sessionCookie = undefined;
   });
 
-  it("injects Cookie header for jade.io when sessionCookie configured", async () => {
-    mockConfig.jade.sessionCookie = "BNJADEAUTH=abc123";
-
-    vi.mocked(axios.get).mockResolvedValueOnce({
-      data: Buffer.from("<html><body>" + "x".repeat(300) + "</body></html>"),
-      headers: { "content-type": "text/html" },
-      status: 200,
-    });
-
-    await fetchDocumentText("https://jade.io/article/68901");
-
-    expect(axios.get).toHaveBeenCalledWith(
-      "https://jade.io/article/68901",
-      expect.objectContaining({
-        headers: expect.objectContaining({ Cookie: "BNJADEAUTH=abc123" }),
-      }),
+  it("throws immediately for jade.io URLs without making any HTTP request", async () => {
+    // jade.io is a GWT SPA; HTTP fetch only returns a JS bootstrap shell, not judgment text.
+    // We reject early so callers get a clear error rather than empty content.
+    await expect(fetchDocumentText("https://jade.io/article/68901")).rejects.toThrow(
+      /fetch_document_text does not support jade\.io/i,
     );
+    expect(axios.get).not.toHaveBeenCalled();
   });
 
-  it("throws helpful error on jade.io 401 when no cookie set", async () => {
-    const err = Object.assign(new Error("Request failed with status code 401"), {
-      response: { status: 401 },
-    });
-    vi.mocked(axios.get).mockRejectedValueOnce(err);
-    vi.mocked(axios.isAxiosError).mockReturnValue(true);
+  it("throws immediately for jade.io URLs regardless of session cookie config", async () => {
+    mockConfig.jade.sessionCookie = "alcsessionid=abc123";
 
     await expect(fetchDocumentText("https://jade.io/article/12345")).rejects.toThrow(
-      /JADE_SESSION_COOKIE/,
+      /GWT single-page application/i,
     );
+    expect(axios.get).not.toHaveBeenCalled();
   });
 
   it("extracts paragraph blocks from AustLII HTML with [N] markers", async () => {
