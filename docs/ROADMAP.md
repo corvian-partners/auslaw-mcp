@@ -259,10 +259,26 @@ function calculateAuthorityScore(result: SearchResult): number {
 3. ✅ `generate_pinpoint` - fetches a judgment and generates a pinpoint citation reference
 4. ✅ `search_by_citation` - resolves a citation to a direct URL or falls back to text search
 
+### ✅ Phase 8: jade.io Search via proposeCitables GWT-RPC (COMPLETED)
+
+**Implemented features:**
+1. ✅ Reverse-engineered `proposeCitables` method on `JadeRemoteService` from HAR analysis
+2. ✅ `buildProposeCitablesRequest(query)` - GWT-RPC request builder (query is the only variable)
+3. ✅ `decodeGwtInt(encoded)` - inverse of existing `encodeGwtInt` for article ID decoding
+4. ✅ `parseProposeCitablesResponse(text)` - extracts case names, neutral + reported citations, and jade article IDs from "document in Jade" descriptor anchors in the string table
+5. ✅ `searchJade(query, options)` - replaces placeholder, calls `proposeCitables` via POST to `/jadeService.do`
+6. ✅ `search_cases` MCP tool now runs AustLII and jade.io in parallel, deduplicates by neutral citation
+7. ✅ Graceful degradation: returns `[]` when `JADE_SESSION_COOKIE` is unset (no error to caller)
+8. ✅ HAR fixture files for deterministic testing: `propose-citables-mabo.txt` (75KB) and `propose-citables-rice.txt`
+
+**Protocol notes** (see `docs/jade-gwt-protocol.md`):
+- Authentication: same `JADE_SESSION_COOKIE` as `fetch_document_text`
+- Strong name staleness: if requests return `//EX`, refresh `JADE_STRONG_NAME` from `X-GWT-Permutation` header
+- Transcripts (HCATrans) are filtered out; results without discoverable article IDs are skipped
+
 ### Should Have (Future)
-1. 🔶 Contact jade.io for a search API (Phase 2B search - currently only fetch is supported)
-2. 🔶 BarNet Jade integration
-3. 🔶 Related cases and legislation suggestions
+1. 🔶 BarNet Jade integration
+2. 🔶 Related cases and legislation suggestions
 
 ## Testing Requirements
 

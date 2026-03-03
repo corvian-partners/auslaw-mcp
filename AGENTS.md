@@ -140,12 +140,13 @@ Every PR must include:
 - `generatePinpoint()`: Finds a paragraph by number or phrase in a `ParagraphBlock[]` array
 
 **jade.io service** (`src/services/jade.ts`):
-- jade.io is a GWT SPA with **no public search API**; `searchJade()` is a placeholder returning `[]` (pending API access from jade.io — see `docs/ROADMAP.md` "Should Have" items)
+- `searchJade(query, options)` calls the `proposeCitables` GWT-RPC method (reverse-engineered via HAR analysis). Returns `[]` gracefully when `JADE_SESSION_COOKIE` is unset.
+- `search_cases` runs AustLII and jade.io in parallel, deduplicating results by neutral citation (jade results preferred as they have richer citation data).
 - Article metadata resolution: `resolveArticle(articleId)` fetches the page `<title>` tag to extract case name and neutral citation without needing JavaScript execution
 - URL utilities: `isJadeUrl()`, `extractArticleId()`, `buildArticleUrl()`, `buildSearchUrl()`
 - Citation lookup: `buildCitationLookupUrl(citation)` returns a jade.io search URL the user can open
 - AustLII enrichment: `enrichWithJadeLinks(results)` adds a `jadeUrl` field to results that have a neutral citation
-- Key exports: `resolveArticle`, `resolveArticleFromUrl`, `articleToSearchResult`, `enrichWithJadeLinks`, `buildCitationLookupUrl`, `isJadeUrl`, `extractArticleId`
+- Key exports: `searchJade`, `resolveArticle`, `resolveArticleFromUrl`, `articleToSearchResult`, `enrichWithJadeLinks`, `buildCitationLookupUrl`, `isJadeUrl`, `extractArticleId`
 
 **GWT-RPC utilities** (`src/services/jade-gwt.ts`):
 - Low-level implementation of jade.io's GWT-RPC wire protocol (reverse-engineered, 2026-03-02)
