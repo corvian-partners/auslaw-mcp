@@ -23,6 +23,7 @@ Model Context Protocol (MCP) server for Australian and New Zealand legal researc
 - ✅ **Citation extraction**: Extracts neutral citations `[2025] HCA 26` and reported citations `(2024) 350 ALR 123`
 - ✅ **AGLC4 citation formatting**: Format, validate, and generate pinpoint citations per AGLC4 rules
 - ✅ **jade.io authenticated fetch**: Fetch full judgment text from jade.io using your session cookie
+- ✅ **jade.io search**: Case search via `proposeCitables` GWT-RPC (reverse-engineered); results merged with AustLII, deduplicated by neutral citation. Requires `JADE_SESSION_COOKIE`.
 - ✅ **Paragraph blocks**: `[N]` paragraph markers extracted as structured blocks for pinpoint citations
 - ✅ **Authority-based ranking**: Results ranked by court hierarchy (HCA > FCAFC > FCA > state courts)
 - ✅ **Multiple formats**: JSON, text, markdown, or HTML output
@@ -33,7 +34,8 @@ Model Context Protocol (MCP) server for Australian and New Zealand legal researc
 
 ### Roadmap
 
-- 🔶 **jade.io search**: Pending API access from jade.io for search integration (authenticated document fetch is fully supported)
+- ✅ **jade.io search**: Implemented via reverse-engineered `proposeCitables` GWT-RPC — requires `JADE_SESSION_COOKIE`
+- 🔶 **BarNet Jade integration**: Requires contacting BarNet for API access
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the full development history and future plans.
 
