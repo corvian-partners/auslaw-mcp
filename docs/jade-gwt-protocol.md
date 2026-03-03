@@ -5,6 +5,7 @@ Reverse-engineered from HAR analysis of jade.io sessions (2026-03-02 and 2026-03
 HAR sources:
 - `jade.io_03-02-2026-13-48-33.har`: article 67401 navigation (article content)
 - `jade.io_03-03-2026-10-08-59.har`: "Mabo " and "rice v as" searches (case search)
+- `jade-ground-truth.har` (2026-03-03): six controlled queries with Chrome navigation to confirm true article IDs
 
 ---
 
@@ -71,31 +72,69 @@ The parser (`parseProposeCitablesResponse()` in `src/services/jade-gwt.ts`) uses
    - `[YYYY] COURT NUM - document in Jade` (neutral citation only)
 
 2. **Validity integer** location in the flat array (used as presence check, stored as `articleId`):
-   - For descriptors with `;`: GWT-encoded integer at `flat_pos - 3` (before the two zero-padding values)
-   - For descriptors without `;`: GWT-encoded integer at `flat_pos + 4` (after Provenance class ref + [11, 1])
-   - **These are NOT jade.io article IDs.** The actual article IDs (e.g. 67683 = `Qhj` for Mabo [1992] HCA 23)
-     live in a separate lookup table region at the end of the flat array (~flat[14000+]), not at any
-     fixed offset from the descriptor. Extracting true article IDs would require reverse-engineering
-     the lookup table structure. `jadeUrl` uses a citation search URL instead.
+   - For descriptors with `;`: GWT-encoded integer at `flat_pos - 3`
+   - For descriptors without `;`: GWT-encoded integer at `flat_pos + 4`
+   - **These are NOT jade.io article IDs.** They are internal entity/citable IDs that resolve to
+     unrelated articles when used in URLs. True article IDs are extracted from the bridge section (below).
 
 3. **Case name** lookup in the string table:
    - Scan backward from the descriptor's string table index, looking for a string containing ` v `
    - Maximum scan depth: 25 positions
    - Fallback for non-`;` descriptors: `string_table[descriptor_idx - 1]`
+   - **Known limitation**: HCA cases with many reported citations (CLR, ALR, ALJR, IR) can push
+     the case name beyond the 25-position scan window (e.g. Kozarov v Victoria [2022] HCA 12
+     has its case name at string table index 6, descriptor at 65, a gap of 59 entries).
 
 4. **Filtering**: HCATrans (transcript) entries are skipped. Entries with no discoverable article ID are skipped. Results are deduplicated by neutral citation.
 
-### Known Data (from "Mabo " query)
+### Article ID Resolution (Bridge Section)
 
-| Result | True Article ID | Near-descriptor IDs (not URL-addressable) | Descriptor |
-|--------|----------------|------------------------------------------|------------|
-| Mabo v Queensland (No 2) | 67683 (Qhj) at flat[14376] | 82343 (UGn) at off-3, 721251 (CwFj) at off+2 | `[1992] HCA 23; 175 CLR 1` |
-| Mabo v Queensland | unknown | 82308 (UGE) at off-3, 721178 (CwEa) at off+2 | `[1988] HCA 69; 166 CLR 186` |
+True jade.io article IDs (used in `jade.io/article/{id}` URLs) are found in the **bridge section**,
+the last ~10% of the flat array. This is a lookup table mapping internal record IDs to article IDs.
 
-**True article IDs** (e.g. 67683) are used in `jade.io/article/{id}` URLs but are stored in a
-separate lookup table region (~flat[14000+]), not at any fixed offset from the descriptor.
-**Near-descriptor integers** (82343, 721251, etc.) resolve to unrelated articles when used in URLs.
-The parser uses citation search URLs (`jade.io/search/{citation}`) as `jadeUrl` instead.
+**Structural pattern**: `[record ID] [article ID]`
+
+```
+flat[i-1] = GWT-encoded record ID   (larger value, e.g. 20422242 = "BN55i")
+flat[i]   = GWT-encoded article ID  (smaller value, e.g. 776897 = "C9rB")
+```
+
+Both values are GWT base-64 encoded strings. The record ID is always numerically larger than the
+article ID. Article IDs fall in the 100-2,000,000 range (2-5 character GWT strings).
+
+**Extraction algorithm** (`extractBridgeCandidates()` in `src/services/jade-gwt.ts`):
+1. Scan the last 10% of the flat array
+2. Find GWT-encoded strings (2-5 chars) decoding to 100-2,000,000
+3. Score as **high confidence** if preceded by a larger GWT value (record ID pattern)
+4. Score as **medium confidence** otherwise
+5. Cap at 30 candidates
+
+**Validation**: each candidate is resolved via a public GET to `jade.io/article/{id}`. The HTML
+`<title>` tag contains the case name and neutral citation. Only candidates whose neutral citation
+matches a search result are accepted. Unmatched results fall back to citation search URLs.
+
+See `resolveBridgeCandidates()` in `src/services/jade.ts`.
+
+### Known Data
+
+Ground-truth article IDs confirmed via Chrome navigation (2026-03-03):
+
+| Query | Case | Article ID | GWT | Bridge Position % |
+|-------|------|-----------|-----|-------------------|
+| Mabo | Mabo v Queensland (No 2) [1992] HCA 23 | 67683 | Qhj | 95.5% |
+| Rogers v Whitaker | Rogers v Whitaker [1992] HCA 58 | 67721 | QiJ | 95.2% |
+| Dietrich v The Queen | Dietrich v The Queen [1992] HCA 57 | 67720 | QiI | 94.4% |
+| Kozarov v Victoria | Victoria v Kozarov [2020] VSCA 301 | 776897 | C9rB | 93.7% |
+| Kozarov v Victoria | Kozarov v State of Victoria [2020] VSC 78 | 712770 | CuBC | 94.8% |
+| Kozarov v Victoria | Kozarov v Victoria [2022] HCA 12 | 912625 | Dezp | 95.9% |
+
+**Candidate counts per response**:
+
+| Query | Descriptors | High-confidence candidates | Total bridge candidates |
+|-------|------------|---------------------------|------------------------|
+| Kozarov | 6 | 6 | 7 |
+| Rogers v Whitaker | 3 | 7 | 10 |
+| Mabo | 16 | 94 | 309 |
 
 ---
 

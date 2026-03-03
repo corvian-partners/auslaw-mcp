@@ -7,6 +7,7 @@ import {
   parseAvd2Response,
   buildProposeCitablesRequest,
   parseProposeCitablesResponse,
+  extractBridgeCandidates,
   JADE_MODULE_BASE,
   JADE_PERMUTATION,
 } from "./jade-gwt.js";
@@ -321,6 +322,47 @@ export function enrichWithJadeLinks(
   });
 }
 
+// ── Bridge Section Article ID Resolution ────────────────────────────────
+
+/**
+ * Normalise a neutral citation for comparison: trim whitespace, collapse
+ * internal runs of whitespace to single spaces.
+ */
+function normaliseCitation(citation: string): string {
+  return citation.trim().replace(/\s+/g, " ");
+}
+
+/**
+ * Resolves bridge section candidates against jade.io to build a
+ * neutral-citation-to-article-ID map. Candidates are validated by fetching
+ * the article page (public GET) and checking the title for a neutral citation.
+ *
+ * Returns a Map of normalised neutral citation to confirmed article ID.
+ */
+async function resolveBridgeCandidates(flatArray: unknown[]): Promise<Map<string, number>> {
+  const candidates = extractBridgeCandidates(flatArray);
+  if (candidates.length === 0) return new Map();
+
+  // Resolve high-confidence candidates first
+  const settled = await Promise.allSettled(
+    candidates.map((c) => resolveArticle(c.articleId)),
+  );
+
+  const citationToId = new Map<string, number>();
+  for (let i = 0; i < settled.length; i++) {
+    const result = settled[i]!;
+    if (result.status !== "fulfilled") continue;
+    const article = result.value;
+    if (!article.accessible || !article.neutralCitation) continue;
+    const key = normaliseCitation(article.neutralCitation);
+    if (!citationToId.has(key)) {
+      citationToId.set(key, article.id);
+    }
+  }
+
+  return citationToId;
+}
+
 /**
  * Searches jade.io using the proposeCitables GWT-RPC method.
  *
@@ -362,20 +404,30 @@ export async function searchJade(query: string, options: SearchOptions): Promise
       maxContentLength: 5 * 1024 * 1024,
     });
 
-    const parsed = parseProposeCitablesResponse(response.data as string);
+    const { results: parsed, flatArray } = parseProposeCitablesResponse(response.data as string);
+
+    // Extract candidate article IDs from the bridge section and validate
+    // them by resolving each against jade.io (public GET, no session cookie needed)
+    const articleIdMap = await resolveBridgeCandidates(flatArray);
 
     const results: SearchResult[] = parsed.map((item) => {
-      // Extract jurisdiction from neutral citation (reuse existing court → jurisdiction map)
+      // Extract jurisdiction from neutral citation (reuse existing court -> jurisdiction map)
       const courtMatch = item.neutralCitation.match(/\[\d{4}\]\s+([A-Z]+(?:\s+[A-Z]+)?)\s+\d+/);
       const court = courtMatch?.[1]?.replace(/\s+/g, "");
       const jurisdiction = court ? COURT_TO_JURISDICTION[court] : undefined;
       const yearMatch = item.neutralCitation.match(/\[(\d{4})\]/);
 
+      // Use resolved article ID if available, otherwise fall back to citation search URL
+      const resolvedId = articleIdMap.get(normaliseCitation(item.neutralCitation));
+      const url = resolvedId
+        ? `https://jade.io/article/${resolvedId}`
+        : item.jadeUrl;
+
       return {
         title: item.caseName,
         neutralCitation: item.neutralCitation,
         reportedCitation: item.reportedCitation,
-        url: item.jadeUrl,
+        url,
         source: "jade" as const,
         type: options.type,
         jurisdiction,

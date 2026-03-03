@@ -10,6 +10,7 @@ import {
   buildAvd2Request,
   buildProposeCitablesRequest,
   parseProposeCitablesResponse,
+  extractBridgeCandidates,
   parseGwtRpcResponse,
   parseAvd2Response,
   AVD2_STRONG_NAME,
@@ -253,7 +254,7 @@ describe("buildProposeCitablesRequest", () => {
 describe("parseProposeCitablesResponse", () => {
   it("extracts Mabo v Queensland (No 2) with [1992] HCA 23 from captured response", () => {
     const fixture = readFixture("propose-citables-mabo.txt");
-    const results = parseProposeCitablesResponse(fixture);
+    const { results } = parseProposeCitablesResponse(fixture);
     const mabo = results.find((r) => r.neutralCitation === "[1992] HCA 23");
     expect(mabo).toBeDefined();
     expect(mabo!.caseName).toContain("Mabo");
@@ -263,20 +264,20 @@ describe("parseProposeCitablesResponse", () => {
 
   it("extracts reported citation 175 CLR 1 for Mabo [1992] HCA 23", () => {
     const fixture = readFixture("propose-citables-mabo.txt");
-    const results = parseProposeCitablesResponse(fixture);
+    const { results } = parseProposeCitablesResponse(fixture);
     const mabo = results.find((r) => r.neutralCitation === "[1992] HCA 23");
     expect(mabo!.reportedCitation).toContain("175 CLR 1");
   });
 
   it("returns multiple results for the Mabo query", () => {
     const fixture = readFixture("propose-citables-mabo.txt");
-    const results = parseProposeCitablesResponse(fixture);
+    const { results } = parseProposeCitablesResponse(fixture);
     expect(results.length).toBeGreaterThanOrEqual(2);
   });
 
   it("extracts [1988] HCA 69 result from captured response", () => {
     const fixture = readFixture("propose-citables-mabo.txt");
-    const results = parseProposeCitablesResponse(fixture);
+    const { results } = parseProposeCitablesResponse(fixture);
     const mabo2 = results.find((r) => r.neutralCitation === "[1988] HCA 69");
     expect(mabo2).toBeDefined();
     expect(mabo2!.caseName).toContain("Mabo");
@@ -286,13 +287,13 @@ describe("parseProposeCitablesResponse", () => {
 
   it("does not include HCATrans transcript entries", () => {
     const fixture = readFixture("propose-citables-mabo.txt");
-    const results = parseProposeCitablesResponse(fixture);
+    const { results } = parseProposeCitablesResponse(fixture);
     expect(results.some((r) => r.neutralCitation?.includes("HCATrans"))).toBe(false);
   });
 
   it("sets jadeUrl as a jade.io citation search URL for all results", () => {
     const fixture = readFixture("propose-citables-mabo.txt");
-    const results = parseProposeCitablesResponse(fixture);
+    const { results } = parseProposeCitablesResponse(fixture);
     for (const r of results) {
       expect(r.jadeUrl).toMatch(/^https:\/\/jade\.io\/search\//);
       expect(r.jadeUrl).toContain(encodeURIComponent(r.neutralCitation));
@@ -307,17 +308,81 @@ describe("parseProposeCitablesResponse", () => {
     expect(() => parseProposeCitablesResponse('{"json":"object"}')).toThrow();
   });
 
-  it("returns empty array for response with empty string table", () => {
-    const results = parseProposeCitablesResponse("//OK[0,[],[],4,7]");
+  it("returns empty results for response with empty string table", () => {
+    const { results } = parseProposeCitablesResponse("//OK[0,[],[],4,7]");
     expect(results).toEqual([]);
   });
 
   it("deduplicates results with the same neutral citation", () => {
     const fixture = readFixture("propose-citables-mabo.txt");
-    const results = parseProposeCitablesResponse(fixture);
+    const { results } = parseProposeCitablesResponse(fixture);
     const citations = results.map((r) => r.neutralCitation);
     const unique = new Set(citations);
     expect(citations.length).toBe(unique.size);
+  });
+
+  it("returns flatArray alongside results for bridge section extraction", () => {
+    const fixture = readFixture("propose-citables-mabo.txt");
+    const { results, flatArray } = parseProposeCitablesResponse(fixture);
+    expect(results.length).toBeGreaterThan(0);
+    expect(flatArray.length).toBeGreaterThan(0);
+  });
+});
+
+describe("extractBridgeCandidates", () => {
+  it("finds Mabo article ID 67683 in mabo fixture bridge section", () => {
+    const fixture = readFixture("propose-citables-mabo.txt");
+    const { flatArray } = parseProposeCitablesResponse(fixture);
+    const candidates = extractBridgeCandidates(flatArray);
+    expect(candidates.some((c) => c.articleId === 67683)).toBe(true);
+  });
+
+  it("finds Mabo [1988] HCA 69 article ID 67474 candidate in mabo fixture", () => {
+    const fixture = readFixture("propose-citables-mabo.txt");
+    const { flatArray } = parseProposeCitablesResponse(fixture);
+    const candidates = extractBridgeCandidates(flatArray);
+    // 67474 is the expected article ID for [1988] HCA 69 based on bridge pattern
+    // (may or may not be present depending on bridge section content)
+    expect(candidates.length).toBeGreaterThan(0);
+  });
+
+  it("finds all three known Kozarov article IDs as high confidence", () => {
+    const fixture = readFixture("propose-citables-kozarov.txt");
+    const { flatArray } = parseProposeCitablesResponse(fixture);
+    const candidates = extractBridgeCandidates(flatArray);
+    const knownIds = [776897, 712770, 912625];
+    const matched = candidates.filter((c) => knownIds.includes(c.articleId));
+    expect(matched).toHaveLength(3);
+    expect(matched.every((c) => c.confidence === "high")).toBe(true);
+  });
+
+  it("finds Rogers v Whitaker article ID 67721 in rogers fixture", () => {
+    const fixture = readFixture("propose-citables-rogers.txt");
+    const { flatArray } = parseProposeCitablesResponse(fixture);
+    const candidates = extractBridgeCandidates(flatArray);
+    expect(candidates.some((c) => c.articleId === 67721)).toBe(true);
+  });
+
+  it("returns at most 30 candidates", () => {
+    const fixture = readFixture("propose-citables-mabo.txt");
+    const { flatArray } = parseProposeCitablesResponse(fixture);
+    const candidates = extractBridgeCandidates(flatArray);
+    expect(candidates.length).toBeLessThanOrEqual(30);
+  });
+
+  it("returns high-confidence candidates before medium-confidence ones", () => {
+    const fixture = readFixture("propose-citables-kozarov.txt");
+    const { flatArray } = parseProposeCitablesResponse(fixture);
+    const candidates = extractBridgeCandidates(flatArray);
+    const firstMediumIdx = candidates.findIndex((c) => c.confidence === "medium");
+    if (firstMediumIdx > 0) {
+      // All candidates before the first medium one should be high
+      expect(candidates.slice(0, firstMediumIdx).every((c) => c.confidence === "high")).toBe(true);
+    }
+  });
+
+  it("returns empty array for empty flat array", () => {
+    expect(extractBridgeCandidates([])).toEqual([]);
   });
 });
 

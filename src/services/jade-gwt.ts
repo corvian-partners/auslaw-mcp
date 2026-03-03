@@ -367,6 +367,15 @@ export function parseGwtRpcResponse(responseText: string): string {
 }
 
 /**
+ * Checks whether a value is a plausible GWT-encoded integer string.
+ * Valid GWT-encoded ints are 2-7 character strings using only the GWT base-64 charset.
+ */
+export function isGwtEncodedInt(v: unknown): v is string {
+  if (typeof v !== "string" || v.length < 2 || v.length > 7) return false;
+  return [...v].every((c) => GWT_CHARSET.includes(c));
+}
+
+/**
  * A single search result extracted from a proposeCitables GWT-RPC response.
  */
 export interface ProposeCitablesResult {
@@ -400,10 +409,12 @@ export interface ProposeCitablesResult {
  * Transcript entries (HCATrans) are skipped. Results are deduplicated by neutral citation.
  *
  * @param responseText - Raw GWT-RPC response string from proposeCitables
- * @returns Array of extracted search results (empty array if no results found)
+ * @returns Object with `results` array and the raw `flatArray` for bridge section extraction
  * @throws Error if the response is a GWT exception (//EX) or has an unexpected prefix
  */
-export function parseProposeCitablesResponse(responseText: string): ProposeCitablesResult[] {
+export function parseProposeCitablesResponse(
+  responseText: string,
+): { results: ProposeCitablesResult[]; flatArray: unknown[] } {
   if (responseText.startsWith("//EX")) {
     throw new Error("jade.io GWT-RPC server returned an exception response");
   }
@@ -416,20 +427,22 @@ export function parseProposeCitablesResponse(responseText: string): ProposeCitab
   const stripped = responseText.slice(4);
   const joined = stripped.replace(/"\+""/g, "");
 
+  const empty = { results: [], flatArray: [] as unknown[] };
+
   let parsed: unknown;
   try {
     parsed = JSON.parse(joined);
   } catch {
-    return [];
+    return empty;
   }
 
   if (!Array.isArray(parsed) || parsed.length < 4) {
-    return [];
+    return empty;
   }
 
   const stringTable = parsed[parsed.length - 3];
   if (!Array.isArray(stringTable) || stringTable.length === 0) {
-    return [];
+    return empty;
   }
 
   // Everything before the last 4 elements is the flat integer/string array
@@ -437,8 +450,7 @@ export function parseProposeCitablesResponse(responseText: string): ProposeCitab
 
   // Helper: check whether a value is a GWT-encoded integer string
   function isGwtEncoded(v: unknown): v is string {
-    if (typeof v !== "string" || v.length < 2 || v.length > 7) return false;
-    return [...v].every((c) => GWT_CHARSET.includes(c));
+    return isGwtEncodedInt(v);
   }
 
   // Build a lookup: string-table index → flat-array positions that reference it
@@ -537,5 +549,70 @@ export function parseProposeCitablesResponse(responseText: string): ProposeCitab
     });
   }
 
-  return results;
+  return { results, flatArray };
+}
+
+/**
+ * A candidate article ID extracted from the bridge section of a proposeCitables
+ * GWT-RPC response flat array.
+ */
+export interface BridgeCandidate {
+  /** Position in the flat array where this candidate was found */
+  flatPos: number;
+  /** Decoded article ID (100-2,000,000 range) */
+  articleId: number;
+  /** Original GWT-encoded string from the flat array */
+  gwtEncoded: string;
+  /**
+   * Confidence level:
+   * - `high`: preceded by another GWT string whose decoded value is larger
+   *   (the [record ID] [article ID] structural pattern)
+   * - `medium`: GWT string in range but no preceding record ID
+   */
+  confidence: "high" | "medium";
+}
+
+/**
+ * Extracts candidate article IDs from the bridge section of a proposeCitables
+ * flat array.
+ *
+ * ## Background
+ *
+ * The proposeCitables response contains a flat array where the last ~10% (the
+ * "bridge section") holds lookup-table entries mapping internal record IDs to
+ * jade.io article IDs. The structural pattern is:
+ *
+ *   flat[i-1] = GWT-encoded record ID (larger value, e.g. 20422242)
+ *   flat[i]   = GWT-encoded article ID (smaller value, e.g. 776897)
+ *
+ * Candidates are filtered to 2-5 character GWT strings decoding to 100-2,000,000
+ * (plausible jade.io article ID range). Candidates preceded by a larger GWT value
+ * are scored as high confidence.
+ *
+ * @param flatArray - The flat array portion of a parsed proposeCitables response
+ * @returns Up to 30 candidates, high-confidence first, then medium, each sorted by position
+ */
+export function extractBridgeCandidates(flatArray: unknown[]): BridgeCandidate[] {
+  const bridgeStart = Math.floor(flatArray.length * 0.9);
+  const high: BridgeCandidate[] = [];
+  const medium: BridgeCandidate[] = [];
+
+  for (let i = bridgeStart; i < flatArray.length; i++) {
+    const val = flatArray[i];
+    if (typeof val !== "string" || val.length < 2 || val.length > 5) continue;
+    if (!isGwtEncodedInt(val)) continue;
+
+    const decoded = decodeGwtInt(val);
+    if (decoded < 100 || decoded > 2_000_000) continue;
+
+    // Check for the [record ID] [article ID] structural pattern
+    const prev = flatArray[i - 1];
+    if (isGwtEncodedInt(prev) && decodeGwtInt(prev) > decoded) {
+      high.push({ flatPos: i, articleId: decoded, gwtEncoded: val, confidence: "high" });
+    } else {
+      medium.push({ flatPos: i, articleId: decoded, gwtEncoded: val, confidence: "medium" });
+    }
+  }
+
+  return [...high, ...medium].slice(0, 30);
 }

@@ -86,12 +86,13 @@ describe("searchJade", () => {
     expect(vi.mocked(jadeRateLimiter.throttle)).toHaveBeenCalled();
   });
 
-  it("returns SearchResult[] with correct fields from mabo fixture", async () => {
+  it("returns SearchResult[] with fallback URLs when resolveArticle fails", async () => {
     mockConfig.jade.sessionCookie = "IID=abc; alcsessionid=xyz";
     vi.mocked(axios.post).mockResolvedValueOnce({
       data: readFixture("propose-citables-mabo.txt"),
       status: 200,
     });
+    // axios.get not mocked -> resolveArticle rejects -> fallback to citation search URLs
 
     const results = await searchJade("Mabo", { type: "case" });
 
@@ -103,6 +104,39 @@ describe("searchJade", () => {
     expect(hca23!.title).toContain("Mabo");
     expect(hca23!.url).toBe("https://jade.io/search/%5B1992%5D%20HCA%2023");
     expect(hca23!.reportedCitation).toContain("175 CLR 1");
+  });
+
+  it("returns direct article URLs when resolveArticle succeeds", async () => {
+    mockConfig.jade.sessionCookie = "IID=abc; alcsessionid=xyz";
+    vi.mocked(axios.post).mockResolvedValueOnce({
+      data: readFixture("propose-citables-mabo.txt"),
+      status: 200,
+    });
+
+    // Mock axios.get for resolveArticle calls on bridge section candidates.
+    // Article 67683 is the true Mabo [1992] HCA 23 article ID, confirmed via
+    // Chrome navigation and present in the bridge section of the Mabo fixture.
+    vi.mocked(axios.get).mockImplementation(async (reqUrl) => {
+      const idMatch = String(reqUrl).match(/\/article\/(\d+)/);
+      const id = idMatch?.[1] ? parseInt(idMatch[1], 10) : 0;
+      if (id === 67683) {
+        return {
+          data: "<html><title>Mabo v Queensland (No 2) [1992] HCA 23 - BarNet Jade</title></html>",
+          status: 200,
+        };
+      }
+      return {
+        data: "<html><title>BarNet Jade - Find recent Australian legal decisions</title></html>",
+        status: 200,
+      };
+    });
+
+    const results = await searchJade("Mabo", { type: "case" });
+
+    expect(results.length).toBeGreaterThan(0);
+    const hca23 = results.find((r) => r.neutralCitation === "[1992] HCA 23");
+    expect(hca23).toBeDefined();
+    expect(hca23!.url).toBe("https://jade.io/article/67683");
   });
 
   it("applies limit option to cap result count", async () => {
