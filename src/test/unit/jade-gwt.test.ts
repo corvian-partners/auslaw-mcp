@@ -1,13 +1,25 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 import {
   encodeGwtInt,
+  decodeGwtInt,
   buildGetInitialContentRequest,
   buildGetMetadataRequest,
   buildAvd2Request,
+  buildProposeCitablesRequest,
+  parseProposeCitablesResponse,
   parseGwtRpcResponse,
   parseAvd2Response,
   AVD2_STRONG_NAME,
+  JADE_STRONG_NAME,
 } from "../../services/jade-gwt.js";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+function readFixture(name: string): string {
+  return readFileSync(join(__dirname, "../fixtures", name), "utf-8");
+}
 
 describe("encodeGwtInt", () => {
   it("encodes 0 as single character A", () => {
@@ -161,6 +173,142 @@ describe("parseAvd2Response", () => {
     const html = "<DIV><P>[1] A paragraph of judgment text about negligence.</P></DIV>";
     const response = `//OK[0,["${shortStr}","${html}"],4,7]`;
     expect(parseAvd2Response(response)).toBe(html);
+  });
+});
+
+describe("decodeGwtInt", () => {
+  it("decodes 'A' as 0", () => {
+    expect(decodeGwtInt("A")).toBe(0);
+  });
+
+  it("decodes 'QdJ' as 67401 (inverse of encodeGwtInt)", () => {
+    expect(decodeGwtInt("QdJ")).toBe(67401);
+  });
+
+  it("decodes 'CwFj' as 721251 (Mabo [1992] HCA 23 article ID from HAR)", () => {
+    expect(decodeGwtInt("CwFj")).toBe(721251);
+  });
+
+  it("decodes 'CwEa' as 721178 ([1988] HCA 69 article ID from HAR)", () => {
+    expect(decodeGwtInt("CwEa")).toBe(721178);
+  });
+
+  it("is the inverse of encodeGwtInt for round-trip", () => {
+    const values = [0, 1, 63, 64, 4096, 67401, 721251, 1182103];
+    for (const n of values) {
+      expect(decodeGwtInt(encodeGwtInt(n))).toBe(n);
+    }
+  });
+
+  it("throws for an empty string", () => {
+    expect(() => decodeGwtInt("")).toThrow();
+  });
+
+  it("throws for a string with characters outside the GWT charset", () => {
+    expect(() => decodeGwtInt("!invalid")).toThrow();
+  });
+});
+
+describe("buildProposeCitablesRequest", () => {
+  it("produces the exact known POST body for query 'Mabo ' (captured from HAR entry 11)", () => {
+    // Captured verbatim from jade.io_03-03-2026-10-08-59.har, entry 11
+    const expected =
+      "7|0|10|https://jade.io/au.com.barnet.jade.JadeClient/|" +
+      "16E3F568878E6841670449E07D95BA3E|" +
+      "au.com.barnet.jade.cs.remote.JadeRemoteService|proposeCitables|" +
+      "java.lang.String/2004016611|" +
+      "au.com.barnet.jade.cs.csobjects.qsearch.QuickSearchFlags/2740681188|" +
+      "Mabo |" +
+      "au.com.barnet.jade.cs.csobjects.qsearchdesktop.QuickSearchFlagsDesktop/2291862948|" +
+      "java.util.HashSet/3273092938|" +
+      "au.com.barnet.jade.cs.persistent.shared.CitableType/1576180844|" +
+      "1|2|3|4|2|5|6|7|8|1|1|1|0|0|1|0|9|4|10|0|10|1|10|2|10|3|1|0|0|1|0|9|0|0|0|0|0|1|1|1|";
+    expect(buildProposeCitablesRequest("Mabo ")).toBe(expected);
+  });
+
+  it("uses JadeRemoteService strong name", () => {
+    const body = buildProposeCitablesRequest("test");
+    expect(body).toContain(JADE_STRONG_NAME);
+    expect(body).toContain("JadeRemoteService");
+  });
+
+  it("embeds the query string directly (no GWT encoding)", () => {
+    const body = buildProposeCitablesRequest("rice v asplund");
+    expect(body).toContain("rice v asplund");
+  });
+
+  it("starts with GWT-RPC version header with 10 string table entries", () => {
+    expect(buildProposeCitablesRequest("test")).toMatch(/^7\|0\|10\|/);
+  });
+});
+
+describe("parseProposeCitablesResponse", () => {
+  it("extracts Mabo v Queensland (No 2) with [1992] HCA 23 from captured response", () => {
+    const fixture = readFixture("propose-citables-mabo.txt");
+    const results = parseProposeCitablesResponse(fixture);
+    const mabo = results.find((r) => r.neutralCitation === "[1992] HCA 23");
+    expect(mabo).toBeDefined();
+    expect(mabo!.caseName).toContain("Mabo");
+    expect(mabo!.articleId).toBe(721251);
+    expect(mabo!.jadeUrl).toBe("https://jade.io/article/721251");
+  });
+
+  it("extracts reported citation 175 CLR 1 for Mabo [1992] HCA 23", () => {
+    const fixture = readFixture("propose-citables-mabo.txt");
+    const results = parseProposeCitablesResponse(fixture);
+    const mabo = results.find((r) => r.neutralCitation === "[1992] HCA 23");
+    expect(mabo!.reportedCitation).toContain("175 CLR 1");
+  });
+
+  it("returns multiple results for the Mabo query", () => {
+    const fixture = readFixture("propose-citables-mabo.txt");
+    const results = parseProposeCitablesResponse(fixture);
+    expect(results.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("extracts [1988] HCA 69 result from captured response", () => {
+    const fixture = readFixture("propose-citables-mabo.txt");
+    const results = parseProposeCitablesResponse(fixture);
+    const mabo2 = results.find((r) => r.neutralCitation === "[1988] HCA 69");
+    expect(mabo2).toBeDefined();
+    expect(mabo2!.caseName).toContain("Mabo");
+    expect(mabo2!.articleId).toBe(721178);
+    expect(mabo2!.reportedCitation).toContain("166 CLR");
+  });
+
+  it("does not include HCATrans transcript entries", () => {
+    const fixture = readFixture("propose-citables-mabo.txt");
+    const results = parseProposeCitablesResponse(fixture);
+    expect(results.some((r) => r.neutralCitation?.includes("HCATrans"))).toBe(false);
+  });
+
+  it("sets jadeUrl correctly for all results", () => {
+    const fixture = readFixture("propose-citables-mabo.txt");
+    const results = parseProposeCitablesResponse(fixture);
+    for (const r of results) {
+      expect(r.jadeUrl).toBe(`https://jade.io/article/${r.articleId}`);
+    }
+  });
+
+  it("throws on //EX exception response", () => {
+    expect(() => parseProposeCitablesResponse("//EX error")).toThrow(/exception/i);
+  });
+
+  it("throws on response with unexpected format (no //OK prefix)", () => {
+    expect(() => parseProposeCitablesResponse('{"json":"object"}')).toThrow();
+  });
+
+  it("returns empty array for response with empty string table", () => {
+    const results = parseProposeCitablesResponse("//OK[0,[],[],4,7]");
+    expect(results).toEqual([]);
+  });
+
+  it("deduplicates results with the same neutral citation", () => {
+    const fixture = readFixture("propose-citables-mabo.txt");
+    const results = parseProposeCitablesResponse(fixture);
+    const citations = results.map((r) => r.neutralCitation);
+    const unique = new Set(citations);
+    expect(citations.length).toBe(unique.size);
   });
 });
 

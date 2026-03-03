@@ -4,12 +4,53 @@
  * jade.io uses GWT-RPC (Google Web Toolkit Remote Procedure Call) as its
  * wire protocol. This module provides:
  *
- * - GWT integer encoding (custom base-64 used in serialised object IDs)
- * - Request body builders for the two article-content methods
- * - Response parser that extracts the string payload from //OK[...] envelopes
+ * - GWT integer encoding/decoding (custom base-64 used in serialised object IDs)
+ * - Request body builders for article-content and search methods
+ * - Response parsers that extract string payloads from //OK[...] envelopes
  *
- * Findings captured from Proxyman HAR: jade.io_03-02-2026-13-48-33.har
- * Article tested: 67401 (Kosciusko Thredbo Pty Ltd v Commissioner of Taxation [1987] HCA 64)
+ * ## GWT-RPC Services Discovered (from HAR analysis)
+ *
+ * ### JadeRemoteService (strong name: JADE_STRONG_NAME)
+ * Methods: proposeCitables, searchArticles, getInitialContent,
+ *          getArticleStructuredMetadata, loadTranches
+ *
+ * ### ArticleViewRemoteService (strong name: AVD2_STRONG_NAME)
+ * Methods: avd2Request (primary content loader), getCitedPreview
+ *
+ * ### LeftoverRemoteService (strong name: LEFTOVER_STRONG_NAME)
+ * Methods: search (citation search - "who cites this article", NOT freetext),
+ *          getCitableCitations
+ *
+ * ## Search: proposeCitables
+ *
+ * proposeCitables (JadeRemoteService) is the ONLY method that returns full
+ * search results in a single call. It powers jade.io's search/autocomplete box.
+ * Returns case names, neutral citations, reported citations, article IDs, and
+ * page pinpoints.
+ *
+ * - searchArticles returns only GWT-encoded article IDs (no case names)
+ * - search (LeftoverRemoteService) is a citation search, not freetext
+ *
+ * ## Response Format
+ *
+ * All GWT-RPC responses follow: //OK[<flat_array>, <type_table>, <string_table>, 4, 7]
+ * - String table is at parsed[parsed.length - 3]
+ * - Negative integers in flat_array reference string_table: -N = string_table[N-1]
+ * - GWT-encoded article IDs appear as strings in the string table
+ *
+ * ## Authentication
+ *
+ * All methods require JADE_SESSION_COOKIE (same for search and content fetch).
+ *
+ * ## Strong Name Staleness
+ *
+ * Strong names are GWT type hashes that may change when jade.io redeploys.
+ * If requests return //EX exceptions, inspect the X-GWT-Permutation header
+ * from a live browser session (DevTools > Network > any jadeService.do request).
+ *
+ * HAR sources:
+ * - jade.io_03-02-2026-13-48-33.har: article 67401 navigation (first analysis)
+ * - jade.io_03-03-2026-10-08-59.har: "Mabo" and "rice v as" searches (second analysis)
  */
 
 /**
@@ -39,10 +80,18 @@ export const AVD2_STRONG_NAME = "E2F710F48F8237D9E1397729B9933A69";
 /**
  * GWT permutation identifier for the Chrome/macOS compiled JS bundle.
  * Sent in the X-GWT-Permutation request header.
- * Different from JADE_STRONG_NAME — this identifies the browser-specific
+ * Different from JADE_STRONG_NAME - this identifies the browser-specific
  * JavaScript permutation, not the serialisation type hash.
  */
 export const JADE_PERMUTATION = "0BCBB10F3C94380A7BB607710B95A8EF";
+
+/**
+ * GWT-RPC strong name (type hash) for LeftoverRemoteService.
+ * This service handles citation-context searches ("who cites this article")
+ * and citation data retrieval. NOT used for freetext case search.
+ * Discovered from HAR analysis (2026-03-03).
+ */
+export const LEFTOVER_STRONG_NAME = "EF3980F48D304DEE936E425DA22C0A1D";
 
 /**
  * Encodes a non-negative integer using GWT's custom base-64 charset.
@@ -69,6 +118,64 @@ export function encodeGwtInt(n: number): string {
     remaining = Math.floor(remaining / 64);
   }
   return result;
+}
+
+/**
+ * Decodes a GWT custom base-64 encoded integer.
+ *
+ * This is the inverse of {@link encodeGwtInt}. It reads each character from
+ * the string and accumulates the value using base-64 positional notation with
+ * the GWT charset (A-Z = 0-25, a-z = 26-51, 0-9 = 52-61, $ = 62, _ = 63).
+ *
+ * Used to decode article IDs that appear as GWT-encoded strings in the flat
+ * array of proposeCitables responses.
+ *
+ * @param encoded - GWT base-64 encoded string (non-empty, valid charset only)
+ * @returns Decoded non-negative integer
+ * @throws Error if the string is empty or contains characters outside the GWT charset
+ */
+export function decodeGwtInt(encoded: string): number {
+  if (!encoded) {
+    throw new Error("GWT int decoding: non-empty string required");
+  }
+  let result = 0;
+  for (const char of encoded) {
+    const index = GWT_CHARSET.indexOf(char);
+    if (index === -1) {
+      throw new Error(`GWT int decoding: character '${char}' is not in GWT charset`);
+    }
+    result = result * 64 + index;
+  }
+  return result;
+}
+
+/**
+ * Builds the GWT-RPC POST body for JadeRemoteService.proposeCitables(query).
+ *
+ * proposeCitables is the search/autocomplete method used by jade.io's search box.
+ * It returns case names, neutral citations, reported citations, article IDs, and
+ * page pinpoints in a single response — the only jade.io method that provides
+ * full search results without requiring a second metadata call per result.
+ *
+ * The request template is 100% static except for the query string at string-table
+ * position 6 (the 10th pipe-delimited field). Captured verbatim from HAR analysis
+ * of jade.io_03-03-2026-10-08-59.har, entry 11 (query "Mabo ").
+ *
+ * @param query - Search query string (passed verbatim, no GWT encoding)
+ * @returns GWT-RPC v7 serialised request body string
+ */
+export function buildProposeCitablesRequest(query: string): string {
+  return (
+    `7|0|10|${JADE_MODULE_BASE}|${JADE_STRONG_NAME}|` +
+    `au.com.barnet.jade.cs.remote.JadeRemoteService|proposeCitables|` +
+    `java.lang.String/2004016611|` +
+    `au.com.barnet.jade.cs.csobjects.qsearch.QuickSearchFlags/2740681188|` +
+    `${query}|` +
+    `au.com.barnet.jade.cs.csobjects.qsearchdesktop.QuickSearchFlagsDesktop/2291862948|` +
+    `java.util.HashSet/3273092938|` +
+    `au.com.barnet.jade.cs.persistent.shared.CitableType/1576180844|` +
+    `1|2|3|4|2|5|6|7|8|1|1|1|0|0|1|0|9|4|10|0|10|1|10|2|10|3|1|0|0|1|0|9|0|0|0|0|0|1|1|1|`
+  );
 }
 
 /**
@@ -255,4 +362,176 @@ export function parseGwtRpcResponse(responseText: string): string {
   }
 
   return content;
+}
+
+/**
+ * A single search result extracted from a proposeCitables GWT-RPC response.
+ */
+export interface ProposeCitablesResult {
+  caseName: string;
+  neutralCitation: string;
+  reportedCitation?: string;
+  articleId: number;
+  jadeUrl: string;
+}
+
+/**
+ * Parses a proposeCitables GWT-RPC response and extracts structured search results.
+ *
+ * ## Parsing Strategy
+ *
+ * The response contains a flat integer array, a type table, and a string table. Rather
+ * than fully deserialising the GWT object graph, this function uses the "document in
+ * Jade" descriptor strings as anchors:
+ *
+ * - Descriptors have the form `"[YYYY] COURT NUM; REPORTER VOL PAGE - document in Jade"`
+ *   (with reported citation) or `"[YYYY] COURT NUM - document in Jade"` (neutral only).
+ * - For descriptors with ";": the article ID is at flat_pos + 2 (the integer following
+ *   the reported-citation string reference).
+ * - For descriptors without ";": the article ID is at flat_pos - 1 (placed immediately
+ *   before the descriptor reference in the flat array).
+ * - Case names are found by scanning backward in the string table from the descriptor
+ *   position, looking for the first string containing " v ".
+ *
+ * Transcript entries (HCATrans) are skipped. Results are deduplicated by neutral citation.
+ *
+ * @param responseText - Raw GWT-RPC response string from proposeCitables
+ * @returns Array of extracted search results (empty array if no results found)
+ * @throws Error if the response is a GWT exception (//EX) or has an unexpected prefix
+ */
+export function parseProposeCitablesResponse(responseText: string): ProposeCitablesResult[] {
+  if (responseText.startsWith("//EX")) {
+    throw new Error("jade.io GWT-RPC server returned an exception response");
+  }
+  if (!responseText.startsWith("//OK")) {
+    throw new Error(
+      `Unexpected GWT-RPC response format (expected //OK prefix): ${responseText.substring(0, 50)}`,
+    );
+  }
+
+  const stripped = responseText.slice(4);
+  const joined = stripped.replace(/"\+""/g, "");
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(joined);
+  } catch {
+    return [];
+  }
+
+  if (!Array.isArray(parsed) || parsed.length < 4) {
+    return [];
+  }
+
+  const stringTable = parsed[parsed.length - 3];
+  if (!Array.isArray(stringTable) || stringTable.length === 0) {
+    return [];
+  }
+
+  // Everything before the last 4 elements is the flat integer/string array
+  const flatArray = parsed.slice(0, parsed.length - 4);
+
+  // Helper: check whether a value is a GWT-encoded integer string
+  function isGwtEncoded(v: unknown): v is string {
+    if (typeof v !== "string" || v.length < 2 || v.length > 7) return false;
+    return [...v].every((c) => GWT_CHARSET.includes(c));
+  }
+
+  // Build a lookup: string-table index → flat-array positions that reference it
+  const refToFlatPositions = new Map<number, number[]>();
+  for (let pos = 0; pos < flatArray.length; pos++) {
+    const v = flatArray[pos];
+    if (typeof v === "number" && v < 0) {
+      const idx = Math.abs(v) - 1;
+      const arr = refToFlatPositions.get(idx);
+      if (arr) {
+        arr.push(pos);
+      } else {
+        refToFlatPositions.set(idx, [pos]);
+      }
+    }
+  }
+
+  const results: ProposeCitablesResult[] = [];
+  const seenCitations = new Set<string>();
+
+  for (let descIdx = 0; descIdx < stringTable.length; descIdx++) {
+    const descriptor = stringTable[descIdx];
+    if (typeof descriptor !== "string" || !descriptor.endsWith("- document in Jade")) {
+      continue;
+    }
+
+    // Skip hearing transcripts — they are not primary judgments
+    if (descriptor.includes("HCATrans")) continue;
+
+    const descriptorContent = descriptor.slice(0, -" - document in Jade".length).trim();
+    const hasSemicolon = descriptorContent.includes(";");
+
+    let neutralCitation: string;
+    let reportedCitation: string | undefined;
+
+    if (hasSemicolon) {
+      const semiIdx = descriptorContent.indexOf(";");
+      neutralCitation = descriptorContent.slice(0, semiIdx).trim();
+      reportedCitation = descriptorContent.slice(semiIdx + 1).trim();
+    } else {
+      neutralCitation = descriptorContent;
+    }
+
+    // Scan backward in the string table for the case name (string containing " v ")
+    const scanStart = hasSemicolon ? descIdx - 2 : descIdx - 1;
+    let caseName: string | undefined;
+    for (let i = scanStart; i >= Math.max(0, descIdx - 25); i--) {
+      const s = stringTable[i];
+      if (typeof s === "string" && s.includes(" v ") && s.length > 5) {
+        caseName = s;
+        break;
+      }
+    }
+
+    // Fallback for non-";" entries: use the string immediately before the descriptor
+    if (!caseName && !hasSemicolon) {
+      const candidate = stringTable[descIdx - 1];
+      if (
+        typeof candidate === "string" &&
+        candidate.length > 3 &&
+        !candidate.startsWith("[") &&
+        !candidate.endsWith("- document in Jade") &&
+        !candidate.includes("au.com.barnet")
+      ) {
+        caseName = candidate;
+      }
+    }
+
+    if (!caseName) continue;
+
+    // Find the article ID in the flat array
+    const flatPositions = refToFlatPositions.get(descIdx) ?? [];
+    let articleId: number | undefined;
+
+    for (const flatPos of flatPositions) {
+      const gwtCandidate = hasSemicolon
+        ? flatArray[flatPos + 2]
+        : flatArray[flatPos - 1];
+
+      if (isGwtEncoded(gwtCandidate)) {
+        articleId = decodeGwtInt(gwtCandidate);
+        break;
+      }
+    }
+
+    if (!articleId) continue;
+    if (seenCitations.has(neutralCitation)) continue;
+    seenCitations.add(neutralCitation);
+
+    results.push({
+      caseName,
+      neutralCitation,
+      reportedCitation,
+      articleId,
+      jadeUrl: `https://jade.io/article/${articleId}`,
+    });
+  }
+
+  return results;
 }
