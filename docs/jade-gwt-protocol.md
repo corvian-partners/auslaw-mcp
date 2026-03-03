@@ -60,7 +60,7 @@ The query string is embedded verbatim (no GWT encoding). See `buildProposeCitabl
 - Type table is at `parsed[parsed.length - 4]`
 - Flat array is everything before the last 4 elements
 - Negative integers in the flat array reference the string table: `-N` maps to `string_table[N-1]`
-- GWT-encoded article IDs appear as short strings directly in the flat array (not in the string table)
+- GWT-encoded integers appear as short strings directly in the flat array (not in the string table)
 
 ### Parsing Strategy
 
@@ -70,9 +70,10 @@ The parser (`parseProposeCitablesResponse()` in `src/services/jade-gwt.ts`) uses
    - `[YYYY] COURT NUM; REPORTER VOL PAGE - document in Jade` (with reported citation)
    - `[YYYY] COURT NUM - document in Jade` (neutral citation only)
 
-2. **Article ID** location in the flat array:
-   - For descriptors with `;`: article ID is at `flat_pos - 3` (before the two zero-padding values)
-   - For descriptors without `;`: article ID is at `flat_pos + 4` (after Provenance class ref + [11, 1])
+2. **Validity integer** location in the flat array (used as presence check, stored as `articleId`):
+   - For descriptors with `;`: GWT-encoded integer at `flat_pos - 3` (before the two zero-padding values)
+   - For descriptors without `;`: GWT-encoded integer at `flat_pos + 4` (after Provenance class ref + [11, 1])
+   - **Note:** The relationship between these integers and jade.io's `/article/{id}` URL scheme is not yet confirmed. `jadeUrl` uses a citation search URL instead.
 
 3. **Case name** lookup in the string table:
    - Scan backward from the descriptor's string table index, looking for a string containing ` v `

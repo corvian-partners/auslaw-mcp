@@ -386,10 +386,12 @@ export interface ProposeCitablesResult {
  *
  * - Descriptors have the form `"[YYYY] COURT NUM; REPORTER VOL PAGE - document in Jade"`
  *   (with reported citation) or `"[YYYY] COURT NUM - document in Jade"` (neutral only).
- * - For descriptors with ";": article ID is at flat_pos - 3 (three positions before the
- *   descriptor, immediately before the two zero padding values).
- * - For descriptors without ";": article ID is at flat_pos + 4 (after the Provenance class
- *   ref and two type tokens [11, 1]).
+ * - For descriptors with ";": a GWT-encoded integer is at flat_pos - 3 (used as a
+ *   validity check that data exists at the expected position).
+ * - For descriptors without ";": a GWT-encoded integer is at flat_pos + 4.
+ * - The extracted integer is stored as `articleId` (best-effort) but the `jadeUrl`
+ *   uses a citation-based search URL since jade.io article IDs cannot be reliably
+ *   decoded from the flat array without further HAR analysis.
  * - Case names are found by scanning backward in the string table from the descriptor
  *   position, looking for the first string containing " v ".
  *
@@ -529,7 +531,7 @@ export function parseProposeCitablesResponse(responseText: string): ProposeCitab
       neutralCitation,
       reportedCitation,
       articleId,
-      jadeUrl: `https://jade.io/article/${articleId}`,
+      jadeUrl: `https://jade.io/search/${encodeURIComponent(neutralCitation)}`,
     });
   }
 

@@ -258,7 +258,7 @@ describe("parseProposeCitablesResponse", () => {
     expect(mabo).toBeDefined();
     expect(mabo!.caseName).toContain("Mabo");
     expect(mabo!.articleId).toBe(82343);
-    expect(mabo!.jadeUrl).toBe("https://jade.io/article/82343");
+    expect(mabo!.jadeUrl).toBe("https://jade.io/search/%5B1992%5D%20HCA%2023");
   });
 
   it("extracts reported citation 175 CLR 1 for Mabo [1992] HCA 23", () => {
@@ -290,11 +290,12 @@ describe("parseProposeCitablesResponse", () => {
     expect(results.some((r) => r.neutralCitation?.includes("HCATrans"))).toBe(false);
   });
 
-  it("sets jadeUrl correctly for all results", () => {
+  it("sets jadeUrl as a jade.io citation search URL for all results", () => {
     const fixture = readFixture("propose-citables-mabo.txt");
     const results = parseProposeCitablesResponse(fixture);
     for (const r of results) {
-      expect(r.jadeUrl).toBe(`https://jade.io/article/${r.articleId}`);
+      expect(r.jadeUrl).toMatch(/^https:\/\/jade\.io\/search\//);
+      expect(r.jadeUrl).toContain(encodeURIComponent(r.neutralCitation));
     }
   });
 
