@@ -60,7 +60,7 @@ describe("buildGetInitialContentRequest", () => {
   it("produces the exact known POST body for article 67401", () => {
     // Captured verbatim from Proxyman HAR export (jade.io_03-02-2026-13-48-33.har)
     const expected =
-      "7|0|7|https://jade.io/au.com.barnet.jade.JadeClient/|16E3F568878E6841670449E07D95BA3E|" +
+      "7|0|7|https://jade.io/au.com.barnet.jade.JadeClient/|B4F37C2BEC5AB097C4C8696FD843C56D|" +
       "au.com.barnet.jade.cs.remote.JadeRemoteService|getInitialContent|" +
       "au.com.barnet.jade.cs.persistent.Jrl/728826604|au.com.barnet.jade.cs.persistent.Article|" +
       "java.util.ArrayList/4159755760|1|2|3|4|1|5|5|QdJ|A|0|A|A|6|0|";
@@ -83,7 +83,7 @@ describe("buildGetMetadataRequest", () => {
   it("produces the exact known POST body for article 67401", () => {
     // Captured verbatim from Proxyman HAR export
     const expected =
-      "7|0|5|https://jade.io/au.com.barnet.jade.JadeClient/|16E3F568878E6841670449E07D95BA3E|" +
+      "7|0|5|https://jade.io/au.com.barnet.jade.JadeClient/|B4F37C2BEC5AB097C4C8696FD843C56D|" +
       "au.com.barnet.jade.cs.remote.JadeRemoteService|getArticleStructuredMetadata|J|" +
       "1|2|3|4|1|5|QdJ|";
     expect(buildGetMetadataRequest(67401)).toBe(expected);
@@ -102,7 +102,7 @@ describe("buildAvd2Request", () => {
     // Article: AA v The Trustees of the Roman Catholic Church... [2026] HCA 2
     const expected =
       "7|0|10|https://jade.io/au.com.barnet.jade.JadeClient/|" +
-      "E2F710F48F8237D9E1397729B9933A69|" +
+      "159521E79F7322FD92335ED73B4403F9|" +
       "au.com.barnet.jade.cs.remote.ArticleViewRemoteService|avd2Request|" +
       "au.com.barnet.jade.cs.csobjects.avd.Avd2Request/2068227305|" +
       "au.com.barnet.jade.cs.persistent.Jrl/728826604|" +
@@ -222,7 +222,7 @@ describe("buildProposeCitablesRequest", () => {
     // Captured verbatim from jade.io_03-03-2026-10-08-59.har, entry 11
     const expected =
       "7|0|10|https://jade.io/au.com.barnet.jade.JadeClient/|" +
-      "16E3F568878E6841670449E07D95BA3E|" +
+      "B4F37C2BEC5AB097C4C8696FD843C56D|" +
       "au.com.barnet.jade.cs.remote.JadeRemoteService|proposeCitables|" +
       "java.lang.String/2004016611|" +
       "au.com.barnet.jade.cs.csobjects.qsearch.QuickSearchFlags/2740681188|" +

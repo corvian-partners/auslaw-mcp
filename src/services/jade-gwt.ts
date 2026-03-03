@@ -67,23 +67,25 @@ export const JADE_MODULE_BASE = "https://jade.io/au.com.barnet.jade.JadeClient/"
  * This may change when jade.io redeploys the GWT app.
  * If content fetching returns an exception response, this hash may need refreshing
  * by inspecting the X-GWT-Permutation header in a fresh browser session.
+ * Last verified: 2026-03-03.
  */
-export const JADE_STRONG_NAME = "16E3F568878E6841670449E07D95BA3E";
+export const JADE_STRONG_NAME = "B4F37C2BEC5AB097C4C8696FD843C56D";
 
 /**
  * GWT-RPC strong name (type hash) for ArticleViewRemoteService.
  * This service handles article content loading via the avd2Request method.
- * Discovered via SPA navigation interception (2026-03-02).
+ * Discovered via SPA navigation interception (2026-03-02). Last verified: 2026-03-03.
  */
-export const AVD2_STRONG_NAME = "E2F710F48F8237D9E1397729B9933A69";
+export const AVD2_STRONG_NAME = "159521E79F7322FD92335ED73B4403F9";
 
 /**
  * GWT permutation identifier for the Chrome/macOS compiled JS bundle.
  * Sent in the X-GWT-Permutation request header.
  * Different from JADE_STRONG_NAME - this identifies the browser-specific
  * JavaScript permutation, not the serialisation type hash.
+ * Last verified: 2026-03-03.
  */
-export const JADE_PERMUTATION = "0BCBB10F3C94380A7BB607710B95A8EF";
+export const JADE_PERMUTATION = "FEBDA911A95AD2DF02425A9C60379101";
 
 /**
  * GWT-RPC strong name (type hash) for LeftoverRemoteService.

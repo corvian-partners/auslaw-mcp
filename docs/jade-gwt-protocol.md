@@ -12,8 +12,8 @@ HAR sources:
 
 | Service | Strong Name | Methods |
 |---------|------------|---------|
-| JadeRemoteService | `16E3F568878E6841670449E07D95BA3E` | proposeCitables, searchArticles, getInitialContent, getArticleStructuredMetadata, loadTranches |
-| ArticleViewRemoteService | `E2F710F48F8237D9E1397729B9933A69` | avd2Request, getCitedPreview |
+| JadeRemoteService | `B4F37C2BEC5AB097C4C8696FD843C56D` | proposeCitables, searchArticles, getInitialContent, getArticleStructuredMetadata, loadTranches |
+| ArticleViewRemoteService | `159521E79F7322FD92335ED73B4403F9` | avd2Request, getCitedPreview |
 | LeftoverRemoteService | `EF3980F48D304DEE936E425DA22C0A1D` | search (citation search: "who cites this article"), getCitableCitations |
 
 Constants are in `src/services/jade-gwt.ts`.
@@ -28,7 +28,7 @@ All GWT-RPC methods POST to `https://jade.io/jadeService.do`.
 ```
 Content-Type: text/x-gwt-rpc; charset=UTF-8
 X-GWT-Module-Base: https://jade.io/au.com.barnet.jade.JadeClient/
-X-GWT-Permutation: 0BCBB10F3C94380A7BB607710B95A8EF
+X-GWT-Permutation: FEBDA911A95AD2DF02425A9C60379101
 Origin: https://jade.io
 Referer: https://jade.io/
 Cookie: <JADE_SESSION_COOKIE>
@@ -45,7 +45,7 @@ The ONLY method that returns full case search results in a single call. Used by 
 Static template with the query string inserted at position 6 in the string table:
 
 ```
-7|0|10|https://jade.io/au.com.barnet.jade.JadeClient/|16E3F568878E6841670449E07D95BA3E|au.com.barnet.jade.cs.remote.JadeRemoteService|proposeCitables|java.lang.String/2004016611|au.com.barnet.jade.cs.csobjects.qsearch.QuickSearchFlags/2740681188|{QUERY}|au.com.barnet.jade.cs.csobjects.qsearchdesktop.QuickSearchFlagsDesktop/2291862948|java.util.HashSet/3273092938|au.com.barnet.jade.cs.persistent.shared.CitableType/1576180844|1|2|3|4|2|5|6|7|8|1|1|1|0|0|1|0|9|4|10|0|10|1|10|2|10|3|1|0|0|1|0|9|0|0|0|0|0|1|1|1|
+7|0|10|https://jade.io/au.com.barnet.jade.JadeClient/|B4F37C2BEC5AB097C4C8696FD843C56D|au.com.barnet.jade.cs.remote.JadeRemoteService|proposeCitables|java.lang.String/2004016611|au.com.barnet.jade.cs.csobjects.qsearch.QuickSearchFlags/2740681188|{QUERY}|au.com.barnet.jade.cs.csobjects.qsearchdesktop.QuickSearchFlagsDesktop/2291862948|java.util.HashSet/3273092938|au.com.barnet.jade.cs.persistent.shared.CitableType/1576180844|1|2|3|4|2|5|6|7|8|1|1|1|0|0|1|0|9|4|10|0|10|1|10|2|10|3|1|0|0|1|0|9|0|0|0|0|0|1|1|1|
 ```
 
 The query string is embedded verbatim (no GWT encoding). See `buildProposeCitablesRequest()` in `src/services/jade-gwt.ts`.
