@@ -16,6 +16,7 @@ import {
   parseGwtConcatResponse,
   parseCitatorResponse,
   extractCitableIds,
+  buildCitatorSearchRequest,
   AVD2_STRONG_NAME,
   JADE_STRONG_NAME,
 } from "../../services/jade-gwt.js";
@@ -515,6 +516,42 @@ describe("parseCitatorResponse", () => {
     const { results, totalCount } = parseCitatorResponse("//OK[4,7]");
     expect(results).toEqual([]);
     expect(totalCount).toBe(0);
+  });
+});
+
+describe("buildCitatorSearchRequest", () => {
+  it("uses LeftoverRemoteService strong name", () => {
+    const body = buildCitatorSearchRequest(2463606);
+    expect(body).toContain("CCB23EABE2EF1A4CA63F2E243C979468");
+    expect(body).toContain("LeftoverRemoteService");
+  });
+
+  it("embeds the GWT-encoded citable ID (JZd2 = 2463606)", () => {
+    const body = buildCitatorSearchRequest(2463606);
+    expect(body).toContain("JZd2");
+  });
+
+  it("includes the search method name", () => {
+    const body = buildCitatorSearchRequest(2463606);
+    expect(body).toContain("|search|");
+  });
+
+  it("starts with GWT-RPC version header", () => {
+    expect(buildCitatorSearchRequest(2463606)).toMatch(/^7\|0\|35\|/);
+  });
+
+  it("includes CitationSearchDefinition type", () => {
+    const body = buildCitatorSearchRequest(2463606);
+    expect(body).toContain("CitationSearchDefinition");
+  });
+
+  it("uses a different citable ID for a different input", () => {
+    const body1 = buildCitatorSearchRequest(2463606);
+    const body2 = buildCitatorSearchRequest(3190326);
+    expect(body1).not.toBe(body2);
+    // JZd2 in body1, not in body2 (different encoded ID)
+    expect(body1).toContain("JZd2");
+    expect(body2).not.toContain("JZd2");
   });
 });
 

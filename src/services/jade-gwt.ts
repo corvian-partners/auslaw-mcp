@@ -842,6 +842,68 @@ export function extractBridgeCandidates(flatArray: unknown[]): BridgeCandidate[]
   return [...high, ...medium].slice(0, 30);
 }
 
+/**
+ * Builds a GWT-RPC request body for LeftoverRemoteService.search.
+ *
+ * This performs a citation search ("who cites this case?") on jade.io.
+ * The input is a citable ID (NOT an article ID), obtained from a
+ * proposeCitables response via extractCitableIds().
+ *
+ * The request template was captured verbatim from jade.io's citator UI
+ * (2026-03-03 HAR, entry 6). The citable ID is parameterised; all other
+ * fields are static. String table has 35 entries; the citable ID is at
+ * string table position 12 (field "JZd2" in the serialised data section).
+ *
+ * Criteria encoded in the template:
+ * - Sort: effective date descending
+ * - IgnoreSelfCitations: true
+ * - IgnoreShortCitations: true (repeated citations in short sections)
+ *
+ * @param citableId - The numeric citable ID for the target case
+ * @returns GWT-RPC request body string
+ */
+export function buildCitatorSearchRequest(citableId: number): string {
+  const gwtId = encodeGwtInt(citableId);
+  return (
+    `7|0|35|${JADE_MODULE_BASE}|${LEFTOVER_STRONG_NAME}|` +
+    `au.com.barnet.jade.cs.remote.LeftoverRemoteService|search|` +
+    `cc.alcina.framework.common.client.search.SearchDefinition/58859665|` +
+    `au.com.barnet.jade.cs.trans.othersearch.citation.CitationSearchDefinition/955429335|` +
+    `au.com.barnet.jade.cs.trans.othersearch.citable.CitableSearchDefinition$CitableSearchDefinitionResultType/866007608|` +
+    `cc.alcina.framework.common.client.logic.domaintransform.lookup.LightSet/1335044906|` +
+    `au.com.barnet.jade.cs.trans.othersearch.citation.CitableAndSectionsCriteriaGroup/1688548685|` +
+    `cc.alcina.framework.common.client.logic.FilterCombinator/3213752301|` +
+    `au.com.barnet.jade.cs.trans.othersearch.citation.CitableAndSectionsCriterion/4126754736|` +
+    `au.com.barnet.jade.cs.trans.othersearch.citation.CitableCriterion/1545253367|` +
+    `cc.alcina.framework.gwt.client.objecttree.search.StandardSearchOperator/2480038826|` +
+    `java.util.ArrayList/4159755760|` +
+    `au.com.barnet.jade.cs.trans.searchcriteria.JTextCriteriaGroup/1895870655|` +
+    `text (in the citing case)|` +
+    `au.com.barnet.jade.cs.trans.othersearch.citation.CitationsFilterCriteriaGroup/3683112863|` +
+    `java.util.LinkedHashSet/95640124|` +
+    `au.com.barnet.jade.cs.trans.othersearch.citation.IgnoreSelfCitationsCriterion/3894086720|` +
+    `cc.alcina.framework.common.client.search.BooleanEnum/357020803|` +
+    ` ignore self citations|` +
+    `au.com.barnet.jade.cs.trans.othersearch.citation.IgnoreShortCitationsCriterion/2514397111|` +
+    ` ignore repeated citations in short sections|` +
+    `au.com.barnet.jade.cs.trans.othersearch.citation.CitationSourceFilterTypeEnumCriterion/4253248484|` +
+    `au.com.barnet.jade.cs.csobjects.citables.CitationSourceFilterType/2049537451|` +
+    `|` +
+    `au.com.barnet.jade.cs.trans.searchcriteria.JournalCriteriaGroup/3343901624|` +
+    `au.com.barnet.jade.cs.trans.othersearch.citation.CitationSourceCriteriaGroup/2323780731|` +
+    `au.com.barnet.jade.cs.trans.searchcriteria.EffectiveDateCriteriaGroup/2950889875|` +
+    `au.com.barnet.jade.cs.trans.searchcriteria.RetrievalDateCriteriaGroup/4014795601|` +
+    `au.com.barnet.jade.cs.trans.searchcriteria.FirstExternalEnabledDateCriteriaGroup/311159311|` +
+    `au.com.barnet.jade.cs.trans.othersearch.citation.CitationSearchDefinition$CitationOrderGroup1/1895249254|` +
+    `au.com.barnet.jade.cs.trans.searchcriteria.order.JadeOrderCriterion$EffectiveDateDescendingOrder/1968635164|` +
+    `cc.alcina.framework.common.client.search.SearchCriterion$Direction/3994719561|` +
+    `au.com.barnet.jade.cs.trans.othersearch.citation.CitationSearchDefinition$CitationOrderGroup2/3936337759|` +
+    `1|2|3|4|1|5|6|7|3|0|0|1|8|8|9|10|1|8|1|11|12|0|0|${gwtId}|0|13|2|14|0|0|0|15|16|10|0|8|0|` +
+    `17|-12|18|3|19|20|1|1|21|-9|22|-17|1|23|-9|24|25|0|0|26|-9|27|-5|8|0|28|-5|8|0|` +
+    `29|-12|8|0|30|-12|8|0|31|-12|8|0|0|8|2|32|-12|18|1|33|34|1|0|0|35|-12|8|0|0|0|0|25|`
+  );
+}
+
 export interface ExtractedCitableId {
   /** Position in the flat array */
   flatPos: number;
