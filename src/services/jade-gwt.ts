@@ -253,6 +253,76 @@ export function buildAvd2Request(articleId: number): string {
 }
 
 /**
+ * Parses a GWT-RPC response that may use .concat() for array joining.
+ *
+ * Large GWT responses split the outer array into multiple segments joined
+ * with .concat() when the element count exceeds 32768 (GWT array limit):
+ *
+ *   //OK[seg1...].concat([seg2..., [string_table], 4, 7])
+ *
+ * This function handles both simple //OK[...] and .concat() formats.
+ * GWT string concatenation ("+") within segments is also handled.
+ *
+ * @returns flatArray (all elements before the trailing [string_table, typeCount, magic])
+ *          and stringTable (the nested array third-from-last in the combined result)
+ */
+export function parseGwtConcatResponse(
+  responseText: string,
+): { flatArray: unknown[]; stringTable: string[] } {
+  if (responseText.startsWith("//EX")) {
+    throw new Error("jade.io GWT-RPC server returned an exception response");
+  }
+  if (!responseText.startsWith("//OK")) {
+    throw new Error(
+      `Unexpected GWT-RPC response format: ${responseText.substring(0, 50)}`,
+    );
+  }
+
+  const stripped = responseText.slice(4);
+  const segments = stripped.split(".concat(");
+
+  const allArrays: unknown[][] = [];
+  for (let i = 0; i < segments.length; i++) {
+    let seg = segments[i]!;
+
+    // Remove trailing close-parens from .concat() nesting
+    if (i > 0) {
+      let trailingParens = 0;
+      for (let j = seg.length - 1; j >= 0; j--) {
+        if (seg[j] === ")") trailingParens++;
+        else break;
+      }
+      seg = seg.substring(0, seg.length - trailingParens);
+    }
+
+    // Handle GWT string concatenation ("+" within string values)
+    seg = seg.replace(/"\+"/g, "");
+
+    const parsed: unknown = JSON.parse(seg);
+    if (!Array.isArray(parsed)) {
+      throw new Error(`GWT segment ${i} is not an array`);
+    }
+    allArrays.push(parsed);
+  }
+
+  const fullArray = allArrays.reduce<unknown[]>((a, b) => a.concat(b), []);
+
+  if (fullArray.length < 4) {
+    return { flatArray: [], stringTable: [] };
+  }
+
+  const stringTable = fullArray[fullArray.length - 3];
+  if (!Array.isArray(stringTable)) {
+    return { flatArray: fullArray, stringTable: [] };
+  }
+
+  // Flat array is everything before the trailing [stringTable, typeCount, magic]
+  const flatArray = fullArray.slice(0, fullArray.length - 3);
+
+  return { flatArray, stringTable: stringTable as string[] };
+}
+
+/**
  * Parses an avd2Request GWT-RPC response and extracts the article HTML.
  *
  * The avd2Request response is a complex GWT-RPC serialised object. The format

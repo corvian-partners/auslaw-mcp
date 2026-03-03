@@ -13,6 +13,7 @@ import {
   extractBridgeCandidates,
   parseGwtRpcResponse,
   parseAvd2Response,
+  parseGwtConcatResponse,
   AVD2_STRONG_NAME,
   JADE_STRONG_NAME,
 } from "../../services/jade-gwt.js";
@@ -416,5 +417,46 @@ describe("parseGwtRpcResponse", () => {
 
   it("throws when string table is empty", () => {
     expect(() => parseGwtRpcResponse("//OK[1,[],[],4,7]")).toThrow(/empty/i);
+  });
+});
+
+describe("parseGwtConcatResponse", () => {
+  it("parses a simple //OK response with no .concat()", () => {
+    const resp = '//OK[1,2,3,["st1","st2"],4,7]';
+    const { flatArray, stringTable } = parseGwtConcatResponse(resp);
+    expect(flatArray).toEqual([1, 2, 3]);
+    expect(stringTable).toEqual(["st1", "st2"]);
+  });
+
+  it("parses a response with one .concat() segment", () => {
+    const resp = '//OK[1,2].concat([3,4,["st1","st2"],4,7])';
+    const { flatArray, stringTable } = parseGwtConcatResponse(resp);
+    expect(flatArray).toEqual([1, 2, 3, 4]);
+    expect(stringTable).toEqual(["st1", "st2"]);
+  });
+
+  it("parses the real Mabo citator fixture", () => {
+    const fixture = readFixture("citator-mabo.txt");
+    const { flatArray, stringTable } = parseGwtConcatResponse(fixture);
+    expect(flatArray.length).toBeGreaterThan(40000);
+    expect(stringTable.length).toBeGreaterThan(1000);
+    expect(stringTable.some(s =>
+      typeof s === "string" && s.includes("CitableSearchResults")
+    )).toBe(true);
+  });
+
+  it("throws on //EX exception response", () => {
+    expect(() => parseGwtConcatResponse("//EX error")).toThrow(/exception/i);
+  });
+
+  it("throws on unexpected prefix", () => {
+    expect(() => parseGwtConcatResponse('{"json":"object"}')).toThrow();
+  });
+
+  it("returns empty arrays for minimal response", () => {
+    const resp = "//OK[4,7]";
+    const { flatArray, stringTable } = parseGwtConcatResponse(resp);
+    expect(flatArray).toEqual([]);
+    expect(stringTable).toEqual([]);
   });
 });
