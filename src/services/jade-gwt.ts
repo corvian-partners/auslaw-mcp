@@ -382,7 +382,7 @@ export interface ProposeCitablesResult {
   caseName: string;
   neutralCitation: string;
   reportedCitation?: string;
-  articleId: number;
+  articleId?: number;
   jadeUrl: string;
 }
 
@@ -397,14 +397,14 @@ export interface ProposeCitablesResult {
  *
  * - Descriptors have the form `"[YYYY] COURT NUM; REPORTER VOL PAGE - document in Jade"`
  *   (with reported citation) or `"[YYYY] COURT NUM - document in Jade"` (neutral only).
- * - For descriptors with ";": a GWT-encoded integer is at flat_pos - 3 (used as a
- *   validity check that data exists at the expected position).
- * - For descriptors without ";": a GWT-encoded integer is at flat_pos + 4.
- * - The extracted integer is stored as `articleId` (best-effort) but the `jadeUrl`
- *   uses a citation-based search URL since jade.io article IDs cannot be reliably
- *   decoded from the flat array without further HAR analysis.
+ * - For descriptors with ";": a GWT-encoded integer may be at flat_pos - 3 (stored
+ *   as `articleId` when found, but this is an entity/citable ID, NOT the jade.io URL ID).
+ * - For descriptors without ";": a GWT-encoded integer may be at flat_pos + 4.
+ * - True jade.io article IDs are extracted separately from the bridge section
+ *   (see `extractBridgeCandidates`) and resolved via `resolveBridgeCandidates`.
+ * - The `jadeUrl` uses a citation-based search URL as a fallback.
  * - Case names are found by scanning backward in the string table from the descriptor
- *   position, looking for the first string containing " v ".
+ *   position (up to 100 entries), looking for the first string containing " v ".
  *
  * Transcript entries (HCATrans) are skipped. Results are deduplicated by neutral citation.
  *
@@ -497,7 +497,7 @@ export function parseProposeCitablesResponse(
     // Scan backward in the string table for the case name (string containing " v ")
     const scanStart = hasSemicolon ? descIdx - 2 : descIdx - 1;
     let caseName: string | undefined;
-    for (let i = scanStart; i >= Math.max(0, descIdx - 25); i--) {
+    for (let i = scanStart; i >= Math.max(0, descIdx - 100); i--) {
       const s = stringTable[i];
       if (typeof s === "string" && s.includes(" v ") && s.length > 5) {
         caseName = s;
@@ -536,7 +536,6 @@ export function parseProposeCitablesResponse(
       }
     }
 
-    if (!articleId) continue;
     if (seenCitations.has(neutralCitation)) continue;
     seenCitations.add(neutralCitation);
 

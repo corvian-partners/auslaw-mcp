@@ -258,7 +258,6 @@ describe("parseProposeCitablesResponse", () => {
     const mabo = results.find((r) => r.neutralCitation === "[1992] HCA 23");
     expect(mabo).toBeDefined();
     expect(mabo!.caseName).toContain("Mabo");
-    expect(mabo!.articleId).toBe(82343);
     expect(mabo!.jadeUrl).toBe("https://jade.io/search/%5B1992%5D%20HCA%2023");
   });
 
@@ -281,7 +280,6 @@ describe("parseProposeCitablesResponse", () => {
     const mabo2 = results.find((r) => r.neutralCitation === "[1988] HCA 69");
     expect(mabo2).toBeDefined();
     expect(mabo2!.caseName).toContain("Mabo");
-    expect(mabo2!.articleId).toBe(82308);
     expect(mabo2!.reportedCitation).toContain("166 CLR");
   });
 

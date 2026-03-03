@@ -79,11 +79,8 @@ The parser (`parseProposeCitablesResponse()` in `src/services/jade-gwt.ts`) uses
 
 3. **Case name** lookup in the string table:
    - Scan backward from the descriptor's string table index, looking for a string containing ` v `
-   - Maximum scan depth: 25 positions
+   - Maximum scan depth: 100 positions
    - Fallback for non-`;` descriptors: `string_table[descriptor_idx - 1]`
-   - **Known limitation**: HCA cases with many reported citations (CLR, ALR, ALJR, IR) can push
-     the case name beyond the 25-position scan window (e.g. Kozarov v Victoria [2022] HCA 12
-     has its case name at string table index 6, descriptor at 65, a gap of 59 entries).
 
 4. **Filtering**: HCATrans (transcript) entries are skipped. Entries with no discoverable article ID are skipped. Results are deduplicated by neutral citation.
 
