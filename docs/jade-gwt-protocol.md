@@ -73,7 +73,10 @@ The parser (`parseProposeCitablesResponse()` in `src/services/jade-gwt.ts`) uses
 2. **Validity integer** location in the flat array (used as presence check, stored as `articleId`):
    - For descriptors with `;`: GWT-encoded integer at `flat_pos - 3` (before the two zero-padding values)
    - For descriptors without `;`: GWT-encoded integer at `flat_pos + 4` (after Provenance class ref + [11, 1])
-   - **Note:** The relationship between these integers and jade.io's `/article/{id}` URL scheme is not yet confirmed. `jadeUrl` uses a citation search URL instead.
+   - **These are NOT jade.io article IDs.** The actual article IDs (e.g. 67683 = `Qhj` for Mabo [1992] HCA 23)
+     live in a separate lookup table region at the end of the flat array (~flat[14000+]), not at any
+     fixed offset from the descriptor. Extracting true article IDs would require reverse-engineering
+     the lookup table structure. `jadeUrl` uses a citation search URL instead.
 
 3. **Case name** lookup in the string table:
    - Scan backward from the descriptor's string table index, looking for a string containing ` v `
@@ -84,14 +87,15 @@ The parser (`parseProposeCitablesResponse()` in `src/services/jade-gwt.ts`) uses
 
 ### Known Data (from "Mabo " query)
 
-| Result | Article ID (URL) | Citable ID (internal) | Descriptor |
-|--------|-----------------|----------------------|------------|
-| Mabo v Queensland (No 2) | 82343 (UGn) | 721251 (CwFj) | `[1992] HCA 23; 175 CLR 1` |
-| Mabo v Queensland | 82308 (UGE) | 721178 (CwEa) | `[1988] HCA 69; 166 CLR 186` |
+| Result | True Article ID | Near-descriptor IDs (not URL-addressable) | Descriptor |
+|--------|----------------|------------------------------------------|------------|
+| Mabo v Queensland (No 2) | 67683 (Qhj) at flat[14376] | 82343 (UGn) at off-3, 721251 (CwFj) at off+2 | `[1992] HCA 23; 175 CLR 1` |
+| Mabo v Queensland | unknown | 82308 (UGE) at off-3, 721178 (CwEa) at off+2 | `[1988] HCA 69; 166 CLR 186` |
 
-**Article IDs** (3-char GWT, ~82k range) are used in `jade.io/article/{id}` URLs.
-**Citable IDs** (4-char GWT, ~721k range) are jade.io's internal citation object IDs. They are
-NOT URL-addressable — resolving them via `/article/{id}` returns unrelated content.
+**True article IDs** (e.g. 67683) are used in `jade.io/article/{id}` URLs but are stored in a
+separate lookup table region (~flat[14000+]), not at any fixed offset from the descriptor.
+**Near-descriptor integers** (82343, 721251, etc.) resolve to unrelated articles when used in URLs.
+The parser uses citation search URLs (`jade.io/search/{citation}`) as `jadeUrl` instead.
 
 ---
 
@@ -112,10 +116,9 @@ GWT uses a custom base-64 charset: `A-Z (0-25), a-z (26-51), 0-9 (52-61), $ (62)
 
 Examples:
 - `67401` = "QdJ"
-- `82343` = "UGn" (Mabo [1992] HCA 23 article URL ID)
-- `82308` = "UGE" (Mabo [1988] HCA 69 article URL ID)
-- `721251` = "CwFj" (Mabo [1992] HCA 23 Citable ID — not URL-addressable)
-- `721178` = "CwEa" (Mabo [1988] HCA 69 Citable ID — not URL-addressable)
+- `67683` = "Qhj" (Mabo [1992] HCA 23 true article ID)
+- `82343` = "UGn" (near-descriptor integer, NOT the article URL ID)
+- `721251` = "CwFj" (near-descriptor integer, NOT the article URL ID)
 - `1182103` = "EgmX"
 
 ---
