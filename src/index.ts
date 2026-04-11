@@ -65,7 +65,8 @@ function createMcpServer(): McpServer {
         searchLegislationParser.parse(rawInput);
       const results = await searchAustLii(query, {
         type: "legislation",
-        jurisdiction,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        jurisdiction: jurisdiction as any,
         limit,
         sortBy,
         method,
@@ -100,8 +101,10 @@ function createMcpServer(): McpServer {
 
       // Run AustLII and jade.io searches in parallel
       const [austliiResults, jadeResults] = await Promise.all([
-        searchAustLii(query, { type: "case", jurisdiction, limit, sortBy, method, offset }),
-        searchJade(query, { type: "case", jurisdiction, limit }),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        searchAustLii(query, { type: "case", jurisdiction: jurisdiction as any, limit, sortBy, method, offset }),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        searchJade(query, { type: "case", jurisdiction: jurisdiction as any, limit }),
       ]);
 
       // Merge with deduplication by neutral citation — jade results preferred (richer data)
