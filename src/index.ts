@@ -408,31 +408,31 @@ async function main() {
       return { content: [{ type: "text" as const, text: lines.join("\n") }] };
     },
   );
-
-createServer(async (req, res) => {
-  if (req.url === "/health") {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ status: "ok" }));
-    return;
-  }
-  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-  await server.connect(transport);
-  try {
-    const chunks: Buffer[] = [];
-    for await (const chunk of req) chunks.push(chunk as Buffer);
-    const bodyStr = Buffer.concat(chunks).toString();
-    const body = bodyStr ? (JSON.parse(bodyStr) as Record<string, unknown>) : undefined;
-    await transport.handleRequest(req, res, body);
-    res.on("close", () => transport.close().catch(() => {}));
-  } catch {
-    if (!res.headersSent) {
-      res.writeHead(500);
-      res.end("Internal server error");
-    }
-  }
-}).listen(port, () => {
-  console.error(`auslaw-mcp HTTP transport listening on :${port}`);
-});
+  server.registerTool(
+    createServer(async (req, res) => {
+      if (req.url === "/health") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ status: "ok" }));
+        return;
+      }
+      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+      await server.connect(transport);
+      try {
+        const chunks: Buffer[] = [];
+        for await (const chunk of req) chunks.push(chunk as Buffer);
+        const bodyStr = Buffer.concat(chunks).toString();
+        const body = bodyStr ? (JSON.parse(bodyStr) as Record<string, unknown>) : undefined;
+        await transport.handleRequest(req, res, body);
+        res.on("close", () => transport.close().catch(() => {}));
+      } catch {
+        if (!res.headersSent) {
+          res.writeHead(500);
+          res.end("Internal server error");
+        }
+      }
+    }).listen(port, () => {
+      console.error(`auslaw-mcp HTTP transport listening on :${port}`);
+    });
 
   } else {
     const transport = new StdioServerTransport();
