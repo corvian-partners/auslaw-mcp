@@ -21,20 +21,11 @@ import {
 } from "./services/citation.js";
 
 const formatEnum = z.enum(["json", "text", "markdown", "html"]).default("json");
-const jurisdictionEnum = z.enum([
-  "cth",
-  "vic",
-  "nsw",
-  "qld",
-  "sa",
-  "wa",
-  "tas",
-  "nt",
-  "act",
-  "federal",
-  "nz",
-  "other",
-]);
+// Accept any AustLII jurisdiction or court code as a string.
+// State/territory: cth, nsw, vic, qld, sa, wa, tas, nt, act, federal, nz, other
+// Court-specific: hca, fca, fcafc, fcca, nswca, nswcca, nswsc, nswdc, nswlec,
+//   vicca, vsc, qca, qsc, sasc, wasc, tassc, ntsc, actsc, and others.
+const jurisdictionEnum = z.string().min(1);
 const sortByEnum = z.enum(["relevance", "date", "auto"]).default("auto");
 const caseMethodEnum = z
   .enum(["auto", "title", "phrase", "all", "any", "near", "boolean"])
@@ -66,7 +57,7 @@ function createMcpServer(): McpServer {
     {
       title: "Search Legislation",
       description:
-        "Search Australian and New Zealand legislation. Jurisdictions: cth, vic, nsw, qld, sa, wa, tas, nt, act, federal, nz, other (all). Methods: auto, title (titles only), phrase (exact match), all (all words), any (any word), near (proximity), legis (legislation names). Use offset for pagination.",
+        "Search Australian and New Zealand legislation. Jurisdiction codes — state/territory: cth, nsw, vic, qld, sa, wa, tas, nt, act, federal, nz, other (omit for all). Methods: auto, title (titles only), phrase (exact match), all (all words), any (any word), near (proximity), legis (legislation names). Use offset for pagination.",
       inputSchema: searchLegislationShape,
     },
     async (rawInput) => {
@@ -100,7 +91,7 @@ function createMcpServer(): McpServer {
     {
       title: "Search Cases",
       description:
-        "Search Australian and New Zealand case law. Jurisdictions: cth, vic, nsw, qld, sa, wa, tas, nt, act, federal, nz, other (all). Methods: auto, title (case names only), phrase (exact match), all (all words), any (any word), near (proximity), boolean. Sorting: auto (smart detection), relevance, date. Use offset for pagination (e.g., offset=50 for page 2).",
+        "Search Australian and New Zealand case law. Jurisdiction codes — state/territory: cth, nsw, vic, qld, sa, wa, tas, nt, act, federal, nz, other; court-specific: hca, fca, fcafc, fcca, nswca, nswcca, nswsc, nswdc, nswlec, vicca, vsc, qca, qsc, sasc, wasc, tassc, ntsc, actsc (omit for all). Methods: auto, title (case names only), phrase (exact match), all (all words), any (any word), near (proximity), boolean. Sorting: auto (smart detection), relevance, date. Use offset for pagination (e.g., offset=50 for page 2).",
       inputSchema: searchCasesShape,
     },
     async (rawInput) => {
