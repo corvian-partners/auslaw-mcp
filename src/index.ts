@@ -408,7 +408,8 @@ async function main() {
       return { content: [{ type: "text" as const, text: lines.join("\n") }] };
     },
   );
-  server.registerTool(
+  if (process.env.MCP_TRANSPORT === "http") {
+    const port = parseInt(process.env.PORT ?? "3000", 10);
     createServer(async (req, res) => {
       if (req.url === "/health") {
         res.writeHead(200, { "Content-Type": "application/json" });
@@ -433,7 +434,6 @@ async function main() {
     }).listen(port, () => {
       console.error(`auslaw-mcp HTTP transport listening on :${port}`);
     });
-
   } else {
     const transport = new StdioServerTransport();
     await server.connect(transport);
