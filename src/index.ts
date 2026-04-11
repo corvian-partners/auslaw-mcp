@@ -43,7 +43,7 @@ const legislationMethodEnum = z
   .enum(["auto", "title", "phrase", "all", "any", "near", "legis", "boolean"])
   .default("auto");
 
-async function main() {
+function createMcpServer(): McpServer {
   const server = new McpServer({
     name: "auslaw-mcp",
     version: "0.1.0",
@@ -408,6 +408,11 @@ async function main() {
       return { content: [{ type: "text" as const, text: lines.join("\n") }] };
     },
   );
+
+  return server;
+}
+
+async function main() {
   if (process.env.MCP_TRANSPORT === "http") {
     const port = parseInt(process.env.PORT ?? "3000", 10);
     createServer(async (req, res) => {
@@ -416,25 +421,37 @@ async function main() {
         res.end(JSON.stringify({ status: "ok" }));
         return;
       }
+      // Create a fresh server + transport per request — the SDK does not allow
+      // reuse of either McpServer or StreamableHTTPServerTransport across requests.
+      const server = createMcpServer();
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-      await server.connect(transport);
+      res.on("close", () => {
+        transport.close().catch(() => {});
+        server.close().catch(() => {});
+      });
       try {
+        await server.connect(transport);
         const chunks: Buffer[] = [];
         for await (const chunk of req) chunks.push(chunk as Buffer);
         const bodyStr = Buffer.concat(chunks).toString();
         const body = bodyStr ? (JSON.parse(bodyStr) as Record<string, unknown>) : undefined;
         await transport.handleRequest(req, res, body);
-        res.on("close", () => transport.close().catch(() => {}));
-      } catch {
+      } catch (err) {
+        console.error("auslaw-mcp request error:", err);
         if (!res.headersSent) {
-          res.writeHead(500);
-          res.end("Internal server error");
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : "Internal server error",
+            }),
+          );
         }
       }
     }).listen(port, () => {
       console.error(`auslaw-mcp HTTP transport listening on :${port}`);
     });
   } else {
+    const server = createMcpServer();
     const transport = new StdioServerTransport();
     await server.connect(transport);
   }
