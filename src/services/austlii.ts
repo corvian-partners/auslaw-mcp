@@ -18,18 +18,26 @@ export interface SearchResult {
 }
 
 export type Jurisdiction =
-  | "cth"
-  | "vic"
-  | "nsw"
-  | "qld"
-  | "sa"
-  | "wa"
-  | "tas"
-  | "nt"
-  | "act"
-  | "federal"
-  | "nz"
-  | "other";
+  | "cth" | "vic" | "nsw" | "qld" | "sa" | "wa" | "tas" | "nt" | "act"
+  | "federal" | "nz" | "other"
+  // Federal court codes
+  | "hca" | "fcafc" | "fca" | "fedcfamc1f" | "fedcfamc2f" | "fct"
+  // NSW court codes
+  | "nswca" | "nswsc" | "nswdc" | "nswlec" | "nswcca" | "nswca_admin" | "ncat"
+  // VIC court codes
+  | "vsca" | "vsc" | "vcat"
+  // QLD court codes
+  | "qca" | "qsc" | "qdc" | "qcat"
+  // WA court codes
+  | "wasca" | "wasc" | "sat"
+  // SA court codes
+  | "sascfc" | "sasc" | "sacat"
+  // TAS court codes
+  | "tasfc" | "tassc"
+  // NT court codes
+  | "ntsc" | "ntca"
+  // ACT court codes
+  | "actca" | "actsc" | "acat";
 export type SearchMethod =
   | "auto"
   | "title"
@@ -169,16 +177,32 @@ export function buildSearchParams(query: string, options: SearchOptions): Search
 
   // Map jurisdiction codes to AustLII path segments
   const australianJurisdictions: Record<string, string> = {
-    cth: "cth",
-    vic: "vic",
-    nsw: "nsw",
-    qld: "qld",
-    sa: "sa",
-    wa: "wa",
-    tas: "tas",
-    nt: "nt",
-    act: "act",
-    federal: "cth", // Federal courts (HCA, FCA, FCAFC, etc.) are under au/cases/cth/
+    // State/territory codes (existing)
+    cth: "cth", vic: "vic", nsw: "nsw", qld: "qld",
+    sa: "sa", wa: "wa", tas: "tas", nt: "nt", act: "act",
+    federal: "cth",
+    // Federal court codes → cth
+    hca: "cth", fcafc: "cth", fca: "cth",
+    fedcfamc1f: "cth", fedcfamc2f: "cth",
+    fct: "cth",   // Federal Circuit and Family Court
+    // NSW court codes → nsw
+    nswca: "nsw", nswsc: "nsw", nswdc: "nsw",
+    nswlec: "nsw", nswcca: "nsw", nswca_admin: "nsw",
+    ncat: "nsw",
+    // VIC court codes → vic
+    vsca: "vic", vsc: "vic", vcat: "vic",
+    // QLD court codes → qld
+    qca: "qld", qsc: "qld", qdc: "qld", qcat: "qld",
+    // WA court codes → wa
+    wasca: "wa", wasc: "wa", sat: "wa",
+    // SA court codes → sa
+    sascfc: "sa", sasc: "sa", sacat: "sa",
+    // TAS court codes → tas
+    tasfc: "tas", tassc: "tas",
+    // NT court codes → nt
+    ntsc: "nt", ntca: "nt",
+    // ACT court codes → act
+    actca: "act", actsc: "act", acat: "act",
   };
 
   // Handle New Zealand - use /austlii meta with nz mask_path

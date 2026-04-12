@@ -54,7 +54,7 @@ describe("formatAGLC4", () => {
       neutralCitation: "[1992] HCA 23",
       reportedCitation: "(1992) 175 CLR 1",
     });
-    expect(result).toBe("Mabo v Queensland (No 2) [1992] HCA 23, (1992) 175 CLR 1");
+    expect(result).toBe("Mabo v Queensland (No 2) [1992] HCA 23 (1992) 175 CLR 1");
   });
 
   it("appends paragraph pinpoint", () => {

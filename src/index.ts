@@ -8,6 +8,7 @@ import * as cheerio from "cheerio";
 
 import { formatFetchResponse, formatSearchResults } from "./utils/formatter.js";
 import { fetchDocumentText } from "./services/fetcher.js";
+import { assertFetchableUrl } from "./utils/url-guard.js";
 import { searchAustLii, type SearchResult } from "./services/austlii.js";
 import {
   formatAGLC4,
@@ -32,6 +33,15 @@ const legislationMethodEnum = z
   .enum(["auto", "title", "phrase", "all", "any", "near", "legis", "boolean"])
   .default("auto");
 
+/**
+ * Build a fresh McpServer with all tools registered.
+ *
+ * In stateless HTTP mode (`sessionIdGenerator: undefined`), each request
+ * requires its own server + transport instance because
+ * `StreamableHTTPServerTransport` tracks per-request state on the Response
+ * object. Reusing a single server/transport across requests throws
+ * "Transport is already started" or silently corrupts the state machine.
+ */
 function createMcpServer(): McpServer {
   const server = new McpServer({
     name: "auslaw-mcp",
@@ -82,6 +92,10 @@ function createMcpServer(): McpServer {
     sortBy: sortByEnum.optional(),
     method: caseMethodEnum.optional(),
     offset: z.number().int().min(0).max(500).optional(),
+    fromYear: z.number().int().min(1900).max(2100).optional()
+      .describe("Filter to cases decided on or after this year"),
+    toYear: z.number().int().min(1900).max(2100).optional()
+      .describe("Filter to cases decided on or before this year"),
   };
   const searchCasesParser = z.object(searchCasesShape);
 
@@ -94,11 +108,21 @@ function createMcpServer(): McpServer {
       inputSchema: searchCasesShape,
     },
     async (rawInput) => {
-      const { query, jurisdiction, limit, format, sortBy, method, offset } =
+      const { query, jurisdiction, limit, format, sortBy, method, offset, fromYear, toYear } =
         searchCasesParser.parse(rawInput);
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const results = await searchAustLii(query, { type: "case", jurisdiction: jurisdiction as any, limit, sortBy, method, offset });
+      let results = await searchAustLii(query, { type: "case", jurisdiction: jurisdiction as any, limit, sortBy, method, offset });
+
+      if (fromYear !== undefined || toYear !== undefined) {
+        results = results.filter((r) => {
+          const yr = parseInt(r.year ?? "0", 10);
+          if (!yr) return true; // keep results with no year rather than discard
+          if (fromYear !== undefined && yr < fromYear) return false;
+          if (toYear !== undefined && yr > toYear) return false;
+          return true;
+        });
+      }
 
       return formatSearchResults(results, format ?? "json");
     },
@@ -297,10 +321,10 @@ function createMcpServer(): McpServer {
 
   // ── search_citing_cases ───────────────────────────────────────────────────
   const searchCitingCasesShape = {
-    caseName: z
+    citation: z
       .string()
       .min(1)
-      .describe("Case name or citation to find citing cases for, e.g. 'Mabo v Queensland (No 2)' or '[1992] HCA 23'"),
+      .describe("Neutral citation or case name to find citing cases for, e.g. '[1992] HCA 23' or 'Mabo v Queensland (No 2)'"),
     format: formatEnum.optional(),
   };
   const searchCitingCasesParser = z.object(searchCitingCasesShape);
@@ -314,7 +338,7 @@ function createMcpServer(): McpServer {
       inputSchema: searchCitingCasesShape,
     },
     async (rawInput) => {
-      const { caseName, format } = searchCitingCasesParser.parse(rawInput);
+      const { citation, format } = searchCitingCasesParser.parse(rawInput);
 
       interface CitingCaseResult {
         title: string;
@@ -325,13 +349,12 @@ function createMcpServer(): McpServer {
         date?: string;
       }
 
-      async function searchLawCite(citation: string): Promise<CitingCaseResult[]> {
+      async function searchLawCite(cit: string): Promise<CitingCaseResult[]> {
         await lawciteRateLimiter.throttle();
-        const lawciteUrl = `${config.lawcite.baseUrl}?cit=${encodeURIComponent(citation)}&nolinks=1`;
+        const lawciteUrl = `${config.lawcite.baseUrl}?cit=${encodeURIComponent(cit)}&nolinks=1`;
         const response = await axios.get(lawciteUrl, {
           headers: {
-            "User-Agent":
-              "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "User-Agent": config.austlii.userAgent,
             Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             Referer: "https://www.austlii.edu.au/",
           },
@@ -375,7 +398,7 @@ function createMcpServer(): McpServer {
       let citingCases: CitingCaseResult[] = [];
 
       try {
-        citingCases = await searchLawCite(caseName);
+        citingCases = await searchLawCite(citation);
       } catch (err) {
         console.warn(
           "LawCite lookup failed, falling back to AustLII phrase search:",
@@ -385,7 +408,7 @@ function createMcpServer(): McpServer {
 
       // Fall back to AustLII phrase search if LawCite returned nothing
       if (citingCases.length === 0) {
-        const fallbackResults = await searchAustLii(caseName, {
+        const fallbackResults = await searchAustLii(citation, {
           type: "case",
           method: "phrase",
           limit: 20,
@@ -421,6 +444,87 @@ function createMcpServer(): McpServer {
     },
   );
 
+  // ── fetch_legislation_section ─────────────────────────────────────────────
+  server.registerTool(
+    "fetch_legislation_section",
+    {
+      title: "Fetch Legislation Section",
+      description:
+        "Fetch the text of a specific section or schedule from an Australian Act on AustLII. " +
+        "More efficient than fetch_document_text on the whole Act when you only need one provision. " +
+        "Accepts the Act's AustLII URL and a section reference like '18', 's 18', 'section 18', 'schedule 1'.",
+      inputSchema: {
+        url: z.string().url().describe("AustLII URL of the Act, e.g. 'https://www.austlii.edu.au/au/legis/cth/consol_act/cca2010265/'"),
+        section: z.string().min(1).describe("Section reference, e.g. '18', 's 18', 'section 18A', 'schedule 1', 'sch 2'"),
+      },
+    },
+    async (rawInput) => {
+      const { url, section } = z.object({
+        url: z.string().url(),
+        section: z.string().min(1),
+      }).parse(rawInput);
+
+      // Normalise section reference to AustLII path segment
+      const norm = section.trim().toLowerCase()
+        .replace(/^section\s+/, "s")
+        .replace(/^schedule\s+/, "sch")
+        .replace(/^sch\s+/, "sch")
+        .replace(/^s\s+/, "s")
+        .replace(/\s+/g, "")
+        // Bare number like "18" or "18a" → "s18" / "s18a"
+        .replace(/^(\d+[a-z]?)$/, "s$1");
+
+      // Validate the normalised segment looks like s18, s18a, sch1 etc.
+      if (!/^(s\d+[a-z]?|sch\d+[a-z]?)$/i.test(norm)) {
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({
+            error: "invalid_section",
+            message: `Could not parse section reference "${section}". Use formats like "18", "s 18", "18A", "schedule 1".`,
+          }) }],
+          isError: true,
+        };
+      }
+
+      const baseUrl = url.replace(/\/+$/, "");
+      const sectionUrl = `${baseUrl}/${norm}.html`;
+
+      try {
+        assertFetchableUrl(sectionUrl);
+      } catch {
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({
+            error: "invalid_url",
+            message: "Only AustLII URLs are supported.",
+          }) }],
+          isError: true,
+        };
+      }
+
+      let doc;
+      try {
+        doc = await fetchDocumentText(sectionUrl);
+      } catch (err) {
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({
+            error: "fetch_failed",
+            message: `Could not retrieve section ${section}. The section may not exist at this URL, or AustLII may be temporarily unavailable.`,
+            detail: err instanceof Error ? err.message : String(err),
+          }) }],
+          isError: true,
+        };
+      }
+
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify({
+          act_url: url,
+          section_url: sectionUrl,
+          section_ref: section,
+          text: doc.text,
+        }) }],
+      };
+    }
+  );
+
   return server;
 }
 
@@ -433,16 +537,20 @@ async function main() {
         res.end(JSON.stringify({ status: "ok" }));
         return;
       }
-      // Create a fresh server + transport per request — the SDK does not allow
-      // reuse of either McpServer or StreamableHTTPServerTransport across requests.
-      const server = createMcpServer();
-      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+      // Per-request server + transport (required for stateless streamable HTTP).
+      // The SDK's StreamableHTTPServerTransport mutates the Response object and
+      // cannot be reused across requests when sessionIdGenerator is undefined.
+      const mcpServer = createMcpServer();
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: undefined,
+      });
       res.on("close", () => {
-        transport.close().catch(() => {});
-        server.close().catch(() => {});
+        // Fire-and-forget cleanup; errors here are non-fatal.
+        void transport.close().catch(() => {});
+        void mcpServer.close().catch(() => {});
       });
       try {
-        await server.connect(transport);
+        await mcpServer.connect(transport);
         const chunks: Buffer[] = [];
         for await (const chunk of req) chunks.push(chunk as Buffer);
         const bodyStr = Buffer.concat(chunks).toString();

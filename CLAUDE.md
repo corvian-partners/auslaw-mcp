@@ -22,7 +22,7 @@ npm run lint:fix       # Auto-fix lint issues
 
 ## Key Architecture
 
-- `src/index.ts` - MCP server, 8 tool registrations
+- `src/index.ts` - MCP server, 9 tool registrations
 - `src/services/austlii.ts` - AustLII search with authority-based ranking
 - `src/services/citation.ts` - AGLC4 formatting, validation, pinpoints
 - `src/services/fetcher.ts` - Document retrieval (HTML, PDF, OCR) from AustLII URLs only
@@ -41,6 +41,7 @@ npm run lint:fix       # Auto-fix lint issues
 | `validate_citation` | Validate and resolve a neutral citation via AustLII HEAD request |
 | `format_citation` | AGLC4 citation formatting |
 | `generate_pinpoint` | Generate paragraph-level pinpoint reference |
+| `fetch_legislation_section` | Fetch a specific section or schedule from an Act on AustLII |
 
 ## Environment Variables
 

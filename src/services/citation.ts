@@ -13,6 +13,7 @@ import {
   COURT_TO_AUSTLII_PATH,
 } from "../constants.js";
 import type { ParagraphBlock } from "./fetcher.js";
+import { austliiRateLimiter } from "../utils/rate-limiter.js";
 
 export interface ParsedCitation {
   neutralCitation?: string;
@@ -68,9 +69,6 @@ export function formatAGLC4(info: AGLC4FormatInput): string {
   }
 
   if (info.reportedCitation) {
-    if (info.neutralCitation) {
-      result += `,`;
-    }
     result += ` ${info.reportedCitation}`;
   }
 
@@ -152,6 +150,7 @@ export async function validateCitation(citation: string): Promise<CitationValida
   }
   const url = `https://www.austlii.edu.au/cgi-bin/viewdoc/${path}/${year}/${num}.html`;
   try {
+    await austliiRateLimiter.throttle();
     await axios.head(url, { timeout: 10000 });
     return { valid: true, canonicalCitation: normalised, austliiUrl: url };
   } catch {
