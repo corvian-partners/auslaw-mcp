@@ -41,5 +41,5 @@ export class RateLimiter {
 /** Rate limiter for AustLII: 10 requests per minute */
 export const austliiRateLimiter = new RateLimiter(10);
 
-/** Rate limiter for jade.io: 5 requests per minute */
-export const jadeRateLimiter = new RateLimiter(5);
+/** Rate limiter for LawCite: 5 requests per minute */
+export const lawciteRateLimiter = new RateLimiter(5);

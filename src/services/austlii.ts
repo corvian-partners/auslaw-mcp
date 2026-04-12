@@ -10,7 +10,7 @@ export interface SearchResult {
   neutralCitation?: string;
   reportedCitation?: string; // e.g., "(2024) 350 ALR 123"
   url: string;
-  source: "austlii" | "jade";
+  source: "austlii";
   summary?: string;
   jurisdiction?: string;
   year?: string;

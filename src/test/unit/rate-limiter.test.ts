@@ -11,9 +11,9 @@ describe("RateLimiter", () => {
     expect(Date.now() - start).toBeLessThan(100);
   });
 
-  it("creates austliiRateLimiter and jadeRateLimiter singletons", async () => {
-    const { austliiRateLimiter, jadeRateLimiter } = await import("../../utils/rate-limiter.js");
+  it("creates austliiRateLimiter and lawciteRateLimiter singletons", async () => {
+    const { austliiRateLimiter, lawciteRateLimiter } = await import("../../utils/rate-limiter.js");
     expect(austliiRateLimiter).toBeDefined();
-    expect(jadeRateLimiter).toBeDefined();
+    expect(lawciteRateLimiter).toBeDefined();
   });
 });

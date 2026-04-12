@@ -3,22 +3,20 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createServer } from "node:http";
 import { z } from "zod";
+import axios from "axios";
+import * as cheerio from "cheerio";
 
 import { formatFetchResponse, formatSearchResults } from "./utils/formatter.js";
 import { fetchDocumentText } from "./services/fetcher.js";
 import { searchAustLii, type SearchResult } from "./services/austlii.js";
-import {
-  resolveArticle,
-  buildCitationLookupUrl,
-  searchJade,
-  searchCitingCases,
-} from "./services/jade.js";
 import {
   formatAGLC4,
   validateCitation,
   parseCitation,
   generatePinpoint,
 } from "./services/citation.js";
+import { config } from "./config.js";
+import { lawciteRateLimiter } from "./utils/rate-limiter.js";
 
 const formatEnum = z.enum(["json", "text", "markdown", "html"]).default("json");
 // Accept any AustLII jurisdiction or court code as a string.
@@ -99,23 +97,10 @@ function createMcpServer(): McpServer {
       const { query, jurisdiction, limit, format, sortBy, method, offset } =
         searchCasesParser.parse(rawInput);
 
-      // Run AustLII and jade.io searches in parallel
-      const [austliiResults, jadeResults] = await Promise.all([
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        searchAustLii(query, { type: "case", jurisdiction: jurisdiction as any, limit, sortBy, method, offset }),
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        searchJade(query, { type: "case", jurisdiction: jurisdiction as any, limit }),
-      ]);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const results = await searchAustLii(query, { type: "case", jurisdiction: jurisdiction as any, limit, sortBy, method, offset });
 
-      // Merge with deduplication by neutral citation — jade results preferred (richer data)
-      const seen = new Map<string, SearchResult>();
-      for (const r of [...jadeResults, ...austliiResults]) {
-        const key = r.neutralCitation ?? r.url;
-        if (!seen.has(key)) seen.set(key, r);
-      }
-      const merged = limit ? [...seen.values()].slice(0, limit) : [...seen.values()];
-
-      return formatSearchResults(merged, format ?? "json");
+      return formatSearchResults(results, format ?? "json");
     },
   );
 
@@ -130,67 +115,13 @@ function createMcpServer(): McpServer {
     {
       title: "Fetch Document Text",
       description:
-        "Fetch full text for a legislation or case URL (AustLII or jade.io), with OCR fallback for scanned PDFs.",
+        "Fetch full text for a legislation or case URL (AustLII), with OCR fallback for scanned PDFs.",
       inputSchema: fetchDocumentShape,
     },
     async (rawInput) => {
       const { url, format } = fetchDocumentParser.parse(rawInput);
       const response = await fetchDocumentText(url);
       return formatFetchResponse(response, format ?? "json");
-    },
-  );
-
-  const resolveJadeArticleShape = {
-    articleId: z.number().int().min(1, "Article ID must be a positive integer."),
-  };
-  const resolveJadeArticleParser = z.object(resolveJadeArticleShape);
-
-  server.registerTool(
-    "resolve_jade_article",
-    {
-      title: "Resolve jade.io Article",
-      description:
-        "Resolve metadata for a jade.io article by its numeric ID. Returns case name, neutral citation, jurisdiction, and year. Useful for looking up specific articles on jade.io (BarNet Jade).",
-      inputSchema: resolveJadeArticleShape,
-    },
-    async (rawInput) => {
-      const { articleId } = resolveJadeArticleParser.parse(rawInput);
-      const article = await resolveArticle(articleId);
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(article, null, 2),
-          },
-        ],
-      };
-    },
-  );
-
-  const jadeLookupShape = {
-    citation: z.string().min(1, "Citation cannot be empty."),
-  };
-  const jadeLookupParser = z.object(jadeLookupShape);
-
-  server.registerTool(
-    "jade_citation_lookup",
-    {
-      title: "Look up Citation on jade.io",
-      description:
-        "Generate a jade.io lookup URL for a given neutral citation (e.g. '[2008] NSWSC 323'). Returns a URL that opens jade.io with the citation search. jade.io does not expose a public search API, so this provides a direct link for the user.",
-      inputSchema: jadeLookupShape,
-    },
-    async (rawInput) => {
-      const { citation } = jadeLookupParser.parse(rawInput);
-      const lookupUrl = buildCitationLookupUrl(citation);
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({ citation, jadeUrl: lookupUrl }, null, 2),
-          },
-        ],
-      };
     },
   );
 
@@ -379,24 +310,111 @@ function createMcpServer(): McpServer {
     {
       title: "Search Citing Cases (Citator)",
       description:
-        "Find cases that cite a given case on jade.io. Uses jade.io's LeftoverRemoteService citator. Requires JADE_SESSION_COOKIE. Returns citing cases with neutral citations, case names, jade.io URLs, and the total count of citing cases. Results are a sample (typically 20-30) of the full set.",
+        "Find cases that cite a given case. Uses LawCite (AustLII's citator service) to find citing cases. Returns citing cases with case names, AustLII URLs, neutral citations, and court/date information where available.",
       inputSchema: searchCitingCasesShape,
     },
     async (rawInput) => {
       const { caseName, format } = searchCitingCasesParser.parse(rawInput);
-      const { results, totalCount } = await searchCitingCases(caseName);
-      const output = { totalCount, results };
+
+      interface CitingCaseResult {
+        title: string;
+        citation?: string;
+        url: string;
+        excerpt?: string;
+        court?: string;
+        date?: string;
+      }
+
+      async function searchLawCite(citation: string): Promise<CitingCaseResult[]> {
+        await lawciteRateLimiter.throttle();
+        const lawciteUrl = `${config.lawcite.baseUrl}?cit=${encodeURIComponent(citation)}&nolinks=1`;
+        const response = await axios.get(lawciteUrl, {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            Referer: "https://www.austlii.edu.au/",
+          },
+          timeout: config.lawcite.timeout,
+          responseType: "text",
+        });
+
+        const $ = cheerio.load(response.data as string);
+        const results: CitingCaseResult[] = [];
+
+        // LawCite results: links to austlii.edu.au cases within the body
+        $("a[href*='austlii.edu.au']").each((_, el) => {
+          const href = $(el).attr("href") || "";
+          // Only include case URLs (not search links etc.)
+          if (!href.includes("/cases/")) return;
+
+          const title = $(el).text().trim();
+          if (!title) return;
+
+          // Extract neutral citation from surrounding text
+          const parentText = $(el).parent().text();
+          const citationMatch = parentText.match(/\[(\d{4})\]\s+([A-Z]+(?:\s+[A-Z]+)?)\s+(\d+)/);
+          const neutralCitation = citationMatch ? citationMatch[0] : undefined;
+
+          // Ensure absolute URL
+          const url = href.startsWith("http") ? href : `https://www.austlii.edu.au${href}`;
+
+          // Avoid duplicates by URL
+          if (results.some((r) => r.url === url)) return;
+
+          results.push({
+            title,
+            citation: neutralCitation,
+            url,
+          });
+        });
+
+        return results;
+      }
+
+      let citingCases: CitingCaseResult[] = [];
+
+      try {
+        citingCases = await searchLawCite(caseName);
+      } catch (err) {
+        console.warn(
+          "LawCite lookup failed, falling back to AustLII phrase search:",
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+
+      // Fall back to AustLII phrase search if LawCite returned nothing
+      if (citingCases.length === 0) {
+        const fallbackResults = await searchAustLii(caseName, {
+          type: "case",
+          method: "phrase",
+          limit: 20,
+        });
+        citingCases = fallbackResults.map((r) => ({
+          title: r.title,
+          citation: r.neutralCitation,
+          url: r.url,
+          excerpt: r.summary,
+          court: undefined,
+          date: undefined,
+        }));
+      }
+
+      const totalCount = citingCases.length;
+      const output = { totalCount, results: citingCases };
       const fmt = format ?? "json";
+
       if (fmt === "json") {
         return { content: [{ type: "text" as const, text: JSON.stringify(output, null, 2) }] };
       }
+
       // Markdown/text fallback
       const lines = [
-        `**${results.length} of ${totalCount} citing cases found**`,
+        `**${totalCount} citing cases found**`,
         "",
-        ...results.map(
+        ...citingCases.map(
           (r) =>
-            `- ${r.caseName} ${r.neutralCitation}${r.reportedCitation ? "; " + r.reportedCitation : ""} — ${r.jadeUrl}`,
+            `- ${r.title}${r.citation ? " " + r.citation : ""}${r.court ? " — " + r.court : ""} — ${r.url}`,
         ),
       ];
       return { content: [{ type: "text" as const, text: lines.join("\n") }] };

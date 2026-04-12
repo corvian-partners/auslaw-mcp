@@ -6,14 +6,14 @@ describe("loadConfig", () => {
     vi.unstubAllEnvs();
   });
 
-  it("loads JADE_SESSION_COOKIE from env", () => {
-    vi.stubEnv("JADE_SESSION_COOKIE", "test-cookie-value");
+  it("loads LAWCITE_BASE_URL from env", () => {
+    vi.stubEnv("LAWCITE_BASE_URL", "https://custom.lawcite.example.com/cgi-bin/LawCite");
     const cfg = loadConfig();
-    expect(cfg.jade.sessionCookie).toBe("test-cookie-value");
+    expect(cfg.lawcite.baseUrl).toBe("https://custom.lawcite.example.com/cgi-bin/LawCite");
   });
 
-  it("sessionCookie is undefined when env var absent", () => {
+  it("lawcite has default baseUrl when env var absent", () => {
     const cfg = loadConfig();
-    expect(cfg.jade.sessionCookie).toBeUndefined();
+    expect(cfg.lawcite.baseUrl).toBe("https://www.austlii.edu.au/cgi-bin/LawCite");
   });
 });

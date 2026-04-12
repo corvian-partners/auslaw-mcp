@@ -10,11 +10,9 @@ export interface Config {
     userAgent: string;
     timeout: number;
   };
-  jade: {
+  lawcite: {
     baseUrl: string;
-    userAgent: string;
     timeout: number;
-    sessionCookie?: string;
   };
   ocr: {
     language: string;
@@ -45,11 +43,9 @@ export function loadConfig(): Config {
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       timeout: parseInt(process.env.AUSTLII_TIMEOUT || "60000", 10), // AustLII can be slow
     },
-    jade: {
-      baseUrl: process.env.JADE_BASE_URL || "https://jade.io",
-      userAgent: process.env.JADE_USER_AGENT || "auslaw-mcp/0.1.0 (legal research tool)",
-      timeout: parseInt(process.env.JADE_TIMEOUT || "15000", 10),
-      sessionCookie: process.env.JADE_SESSION_COOKIE || undefined,
+    lawcite: {
+      baseUrl: process.env.LAWCITE_BASE_URL || "https://www.austlii.edu.au/cgi-bin/LawCite",
+      timeout: parseInt(process.env.LAWCITE_TIMEOUT || "15000", 10),
     },
     ocr: {
       language: process.env.OCR_LANGUAGE || "eng",

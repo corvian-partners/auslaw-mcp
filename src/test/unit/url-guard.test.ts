@@ -5,8 +5,8 @@ describe("assertFetchableUrl", () => {
   it("permits AustLII HTTPS URL", () => {
     expect(() => assertFetchableUrl("https://www.austlii.edu.au/case")).not.toThrow();
   });
-  it("permits jade.io HTTPS URL", () => {
-    expect(() => assertFetchableUrl("https://jade.io/article/12345")).not.toThrow();
+  it("blocks jade.io HTTPS URL (no longer permitted)", () => {
+    expect(() => assertFetchableUrl("https://jade.io/article/12345")).toThrow(/not in permitted/);
   });
   it("permits classic.austlii.edu.au", () => {
     expect(() => assertFetchableUrl("https://classic.austlii.edu.au/au/cases")).not.toThrow();

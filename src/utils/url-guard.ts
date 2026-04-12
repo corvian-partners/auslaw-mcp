@@ -2,8 +2,6 @@ const ALLOWED_HOSTS = new Set([
   "www.austlii.edu.au",
   "classic.austlii.edu.au",
   "austlii.edu.au",
-  "jade.io",
-  "www.jade.io",
 ]);
 
 /**

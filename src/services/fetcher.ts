@@ -7,9 +7,8 @@ import * as tmp from "tmp";
 import * as fs from "fs/promises";
 import { config } from "../config.js";
 import { MAX_CONTENT_LENGTH } from "../constants.js";
-import { isJadeUrl, extractArticleId, fetchJadeArticleContent } from "./jade.js";
 import { assertFetchableUrl } from "../utils/url-guard.js";
-import { austliiRateLimiter, jadeRateLimiter } from "../utils/rate-limiter.js";
+import { austliiRateLimiter } from "../utils/rate-limiter.js";
 
 export interface ParagraphBlock {
   number: number;
@@ -75,48 +74,10 @@ async function performOcr(buffer: Buffer): Promise<{ text: string; ocrUsed: bool
 }
 
 /**
- * Extracts text from jade.io HTML with special handling for their structure
- */
-function extractTextFromJadeHtml(html: string): string {
-  const $ = cheerio.load(html);
-
-  // Remove unwanted elements
-  $("script, style, nav, header, footer, .sidebar, .navigation, .menu").remove();
-
-  // jade.io specific selectors
-  const jadeSelectors = [
-    ".judgment-text",
-    ".judgment-content",
-    ".decision-text",
-    "#judgment",
-    ".case-content",
-    "article.judgment",
-  ];
-
-  for (const selector of jadeSelectors) {
-    const $content = $(selector);
-    if ($content.length > 0) {
-      const text = $content.text().trim();
-      if (text.length > 200) {
-        return text;
-      }
-    }
-  }
-
-  // Fall through to generic extraction
-  return extractTextFromHtml(html);
-}
-
-/**
  * Generic HTML text extraction for AustLII and other sources
  */
-function extractTextFromHtml(html: string, url?: string): string {
+function extractTextFromHtml(html: string): string {
   const $ = cheerio.load(html);
-
-  // Check if this is jade.io
-  if (url && url.includes("jade.io")) {
-    return extractTextFromJadeHtml(html);
-  }
 
   // Remove script and style elements
   $("script, style, nav, header, footer").remove();
@@ -220,73 +181,26 @@ function extractParagraphBlocks(html: string): ParagraphBlock[] {
  * @throws {Error} If the network request fails or the content type is unsupported
  */
 export async function fetchDocumentText(url: string): Promise<FetchResponse> {
-  assertFetchableUrl(url);
-
-  // jade.io uses GWT-RPC — content is loaded client-side and not available
-  // via a plain HTTP fetch. Route through the direct GWT-RPC API when a
-  // session cookie is configured; reject with a helpful message otherwise.
-  if (isJadeUrl(url)) {
-    if (!config.jade.sessionCookie) {
-      throw new Error(
-        "fetch_document_text requires JADE_SESSION_COOKIE for jade.io URLs. " +
-          "jade.io renders content via a GWT single-page application. " +
-          "Set JADE_SESSION_COOKIE in your environment (see README for extraction instructions).",
-      );
-    }
-
-    const articleId = extractArticleId(url);
-    if (!articleId) {
-      throw new Error(`Could not extract article ID from jade.io URL: ${url}`);
-    }
-
-    await jadeRateLimiter.throttle();
-    let html: string;
-    try {
-      html = await fetchJadeArticleContent(articleId, config.jade.sessionCookie);
-    } catch (error) {
-      // Convert AxiosError to a plain Error so config.headers (which contains the
-      // Cookie with JADE_SESSION_COOKIE) is never propagated to the caller or logger.
-      if (axios.isAxiosError(error)) {
-        const status = error.response?.status;
-        if (status === 401 || status === 403) {
-          throw new Error(
-            `jade.io returned ${status}. The JADE_SESSION_COOKIE may have expired — re-extract it from your browser session.`,
-          );
-        }
-        throw new Error(`Failed to fetch jade.io article ${articleId}: ${error.message}`);
-      }
-      throw error;
-    }
-    const text = extractTextFromHtml(html, url);
-    const paragraphs = extractParagraphBlocks(html);
-    const cleanedHtml = cleanHtmlForOutput(html);
-
-    return {
-      text,
-      html: cleanedHtml,
-      contentType: "text/html",
-      sourceUrl: url,
-      ocrUsed: false,
-      metadata: {
-        contentLength: String(html.length),
-        contentType: "text/html",
-        source: "jade-gwt-rpc",
-      },
-      paragraphs,
-    };
+  // jade.io URLs are no longer supported — reject before the SSRF guard.
+  if (url.includes("jade.io")) {
+    throw new Error(
+      "jade.io URLs are no longer supported. Use an AustLII URL or neutral citation instead.",
+    );
   }
+
+  assertFetchableUrl(url);
 
   try {
     await austliiRateLimiter.throttle();
 
     const headers: Record<string, string> = {
-      "User-Agent": config.jade.userAgent,
+      "User-Agent": config.austlii.userAgent,
     };
 
     const response = await axios.get(url, {
       responseType: "arraybuffer",
       headers,
-      timeout: config.jade.timeout,
+      timeout: config.austlii.timeout,
       maxContentLength: MAX_CONTENT_LENGTH,
     });
 
@@ -310,7 +224,7 @@ export async function fetchDocumentText(url: string): Promise<FetchResponse> {
     // Handle HTML documents
     else if (contentType.includes("text/html") || detectedType?.mime === "text/html") {
       const rawHtml = buffer.toString("utf-8");
-      text = extractTextFromHtml(rawHtml, url);
+      text = extractTextFromHtml(rawHtml);
       paragraphs = extractParagraphBlocks(rawHtml);
       cleanedHtml = cleanHtmlForOutput(rawHtml);
     }
@@ -342,11 +256,6 @@ export async function fetchDocumentText(url: string): Promise<FetchResponse> {
     };
   } catch (error) {
     if (axios.isAxiosError(error)) {
-      if (isJadeUrl(url) && (error.response?.status === 401 || error.response?.status === 403)) {
-        throw new Error(
-          `jade.io returned ${error.response.status}. Set JADE_SESSION_COOKIE env var with your authenticated session cookie.`,
-        );
-      }
       throw new Error(`Failed to fetch document from ${url}: ${error.message}`);
     }
     throw error;
