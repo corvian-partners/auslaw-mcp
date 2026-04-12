@@ -217,6 +217,14 @@ export async function fetchDocumentText(url: string): Promise<FetchResponse> {
     );
   }
 
+  // Normalise old /cgi-bin/viewdoc/ URL format (retired, returns 410) to the
+  // current direct path format. e.g.:
+  //   /cgi-bin/viewdoc/au/cases/nsw/NSWSC/2026/129.html → /au/cases/…
+  url = url.replace(
+    /^(https?:\/\/(?:www\.)?austlii\.edu\.au)\/cgi-bin\/viewdoc\//,
+    "$1/",
+  );
+
   assertFetchableUrl(url);
 
   try {

@@ -148,7 +148,7 @@ export async function validateCitation(citation: string): Promise<CitationValida
   if (!path) {
     return { valid: false, message: `Unknown court code: ${court}` };
   }
-  const url = `https://www.austlii.edu.au/cgi-bin/viewdoc/${path}/${year}/${num}.html`;
+  const url = `https://www.austlii.edu.au/${path}/${year}/${num}.html`;
   try {
     await austliiRateLimiter.throttle();
     await axios.head(url, { timeout: 10000 });

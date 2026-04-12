@@ -568,7 +568,7 @@ async function main() {
         }
       }
     }).listen(port, () => {
-      console.error(`auslaw-mcp HTTP transport listening on :${port}`);
+      console.log(`auslaw-mcp HTTP transport listening on :${port}`);
     });
   } else {
     const server = createMcpServer();
