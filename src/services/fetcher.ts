@@ -230,8 +230,23 @@ export async function fetchDocumentText(url: string): Promise<FetchResponse> {
   try {
     await austliiRateLimiter.throttle();
 
+    // AustLII uses Vary: User-Agent and returns 410 for stale/bot-like UAs.
+    // Include the same Sec-Fetch-* and client-hint headers a real Chrome
+    // browser sends on a top-level navigation.
     const headers: Record<string, string> = {
       "User-Agent": config.austlii.userAgent,
+      Accept:
+        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+      "Accept-Language": "en-AU,en-GB;q=0.9,en;q=0.8",
+      "Accept-Encoding": "gzip, deflate, br, zstd",
+      "Upgrade-Insecure-Requests": "1",
+      "Sec-Fetch-Dest": "document",
+      "Sec-Fetch-Mode": "navigate",
+      "Sec-Fetch-Site": "same-origin",
+      "Sec-Fetch-User": "?1",
+      "sec-ch-ua": '"Google Chrome";v="147", "Not.A/Brand";v="8", "Chromium";v="147"',
+      "sec-ch-ua-mobile": "?0",
+      "sec-ch-ua-platform": '"macOS"',
     };
 
     const response = await axios.get(url, {

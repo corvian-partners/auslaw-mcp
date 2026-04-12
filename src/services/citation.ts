@@ -151,7 +151,16 @@ export async function validateCitation(citation: string): Promise<CitationValida
   const url = `https://www.austlii.edu.au/${path}/${year}/${num}.html`;
   try {
     await austliiRateLimiter.throttle();
-    await axios.head(url, { timeout: 10000 });
+    await axios.head(url, {
+      timeout: 10000,
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "same-origin",
+      },
+    });
     return { valid: true, canonicalCitation: normalised, austliiUrl: url };
   } catch {
     return {

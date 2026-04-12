@@ -57,13 +57,26 @@ export interface SearchOptions {
   offset?: number; // For pagination - skip first N results
 }
 
-// Browser-like headers required by AustLII
+// AustLII's server uses `Vary: User-Agent` and gates out stale/bot-like
+// User-Agents with HTTP 410. Headers must match a current browser navigation
+// request — including Sec-Fetch-* and client-hint headers that real Chrome
+// sends on top-level navigations.
 const AUSTLII_HEADERS = {
   "User-Agent":
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
   Referer: "https://www.austlii.edu.au/forms/search1.html",
-  Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-  "Accept-Language": "en-AU,en;q=0.9",
+  Accept:
+    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+  "Accept-Language": "en-AU,en-GB;q=0.9,en;q=0.8",
+  "Accept-Encoding": "gzip, deflate, br, zstd",
+  "Upgrade-Insecure-Requests": "1",
+  "Sec-Fetch-Dest": "document",
+  "Sec-Fetch-Mode": "navigate",
+  "Sec-Fetch-Site": "same-origin",
+  "Sec-Fetch-User": "?1",
+  "sec-ch-ua": '"Google Chrome";v="147", "Not.A/Brand";v="8", "Chromium";v="147"',
+  "sec-ch-ua-mobile": "?0",
+  "sec-ch-ua-platform": '"macOS"',
 };
 
 export interface SearchParams {
