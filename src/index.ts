@@ -18,6 +18,8 @@ import {
 } from "./services/citation.js";
 import { config } from "./config.js";
 import { lawciteRateLimiter } from "./utils/rate-limiter.js";
+import { logger } from "./utils/logger.js";
+import { MAX_CONTENT_LENGTH } from "./constants.js";
 
 const formatEnum = z.enum(["json", "text", "markdown", "html"]).default("json");
 // Accept any AustLII jurisdiction or court code as a string.
@@ -92,9 +94,19 @@ function createMcpServer(): McpServer {
     sortBy: sortByEnum.optional(),
     method: caseMethodEnum.optional(),
     offset: z.number().int().min(0).max(500).optional(),
-    fromYear: z.number().int().min(1900).max(2100).optional()
+    fromYear: z
+      .number()
+      .int()
+      .min(1900)
+      .max(2100)
+      .optional()
       .describe("Filter to cases decided on or after this year"),
-    toYear: z.number().int().min(1900).max(2100).optional()
+    toYear: z
+      .number()
+      .int()
+      .min(1900)
+      .max(2100)
+      .optional()
       .describe("Filter to cases decided on or before this year"),
   };
   const searchCasesParser = z.object(searchCasesShape);
@@ -112,7 +124,14 @@ function createMcpServer(): McpServer {
         searchCasesParser.parse(rawInput);
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let results = await searchAustLii(query, { type: "case", jurisdiction: jurisdiction as any, limit, sortBy, method, offset });
+      let results = await searchAustLii(query, {
+        type: "case",
+        jurisdiction: jurisdiction as any,
+        limit,
+        sortBy,
+        method,
+        offset,
+      });
 
       if (fromYear !== undefined || toYear !== undefined) {
         results = results.filter((r) => {
@@ -324,7 +343,9 @@ function createMcpServer(): McpServer {
     citation: z
       .string()
       .min(1)
-      .describe("Neutral citation or case name to find citing cases for, e.g. '[1992] HCA 23' or 'Mabo v Queensland (No 2)'"),
+      .describe(
+        "Neutral citation or case name to find citing cases for, e.g. '[1992] HCA 23' or 'Mabo v Queensland (No 2)'",
+      ),
     format: formatEnum.optional(),
   };
   const searchCitingCasesParser = z.object(searchCitingCasesShape);
@@ -400,10 +421,9 @@ function createMcpServer(): McpServer {
       try {
         citingCases = await searchLawCite(citation);
       } catch (err) {
-        console.warn(
-          "LawCite lookup failed, falling back to AustLII phrase search:",
-          err instanceof Error ? err.message : String(err),
-        );
+        logger.warn("LawCite lookup failed, falling back to AustLII phrase search", {
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
 
       // Fall back to AustLII phrase search if LawCite returned nothing
@@ -454,18 +474,30 @@ function createMcpServer(): McpServer {
         "More efficient than fetch_document_text on the whole Act when you only need one provision. " +
         "Accepts the Act's AustLII URL and a section reference like '18', 's 18', 'section 18', 'schedule 1'.",
       inputSchema: {
-        url: z.string().url().describe("AustLII URL of the Act, e.g. 'https://www.austlii.edu.au/au/legis/cth/consol_act/cca2010265/'"),
-        section: z.string().min(1).describe("Section reference, e.g. '18', 's 18', 'section 18A', 'schedule 1', 'sch 2'"),
+        url: z
+          .string()
+          .url()
+          .describe(
+            "AustLII URL of the Act, e.g. 'https://www.austlii.edu.au/au/legis/cth/consol_act/cca2010265/'",
+          ),
+        section: z
+          .string()
+          .min(1)
+          .describe("Section reference, e.g. '18', 's 18', 'section 18A', 'schedule 1', 'sch 2'"),
       },
     },
     async (rawInput) => {
-      const { url, section } = z.object({
-        url: z.string().url(),
-        section: z.string().min(1),
-      }).parse(rawInput);
+      const { url, section } = z
+        .object({
+          url: z.string().url(),
+          section: z.string().min(1),
+        })
+        .parse(rawInput);
 
       // Normalise section reference to AustLII path segment
-      const norm = section.trim().toLowerCase()
+      const norm = section
+        .trim()
+        .toLowerCase()
         .replace(/^section\s+/, "s")
         .replace(/^schedule\s+/, "sch")
         .replace(/^sch\s+/, "sch")
@@ -477,10 +509,15 @@ function createMcpServer(): McpServer {
       // Validate the normalised segment looks like s18, s18a, sch1 etc.
       if (!/^(s\d+[a-z]?|sch\d+[a-z]?)$/i.test(norm)) {
         return {
-          content: [{ type: "text" as const, text: JSON.stringify({
-            error: "invalid_section",
-            message: `Could not parse section reference "${section}". Use formats like "18", "s 18", "18A", "schedule 1".`,
-          }) }],
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                error: "invalid_section",
+                message: `Could not parse section reference "${section}". Use formats like "18", "s 18", "18A", "schedule 1".`,
+              }),
+            },
+          ],
           isError: true,
         };
       }
@@ -492,10 +529,15 @@ function createMcpServer(): McpServer {
         assertFetchableUrl(sectionUrl);
       } catch {
         return {
-          content: [{ type: "text" as const, text: JSON.stringify({
-            error: "invalid_url",
-            message: "Only AustLII URLs are supported.",
-          }) }],
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                error: "invalid_url",
+                message: "Only AustLII URLs are supported.",
+              }),
+            },
+          ],
           isError: true,
         };
       }
@@ -505,36 +547,57 @@ function createMcpServer(): McpServer {
         doc = await fetchDocumentText(sectionUrl);
       } catch (err) {
         return {
-          content: [{ type: "text" as const, text: JSON.stringify({
-            error: "fetch_failed",
-            message: `Could not retrieve section ${section}. The section may not exist at this URL, or AustLII may be temporarily unavailable.`,
-            detail: err instanceof Error ? err.message : String(err),
-          }) }],
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                error: "fetch_failed",
+                message: `Could not retrieve section ${section}. The section may not exist at this URL, or AustLII may be temporarily unavailable.`,
+                detail: err instanceof Error ? err.message : String(err),
+              }),
+            },
+          ],
           isError: true,
         };
       }
 
       return {
-        content: [{ type: "text" as const, text: JSON.stringify({
-          act_url: url,
-          section_url: sectionUrl,
-          section_ref: section,
-          text: doc.text,
-        }) }],
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify({
+              act_url: url,
+              section_url: sectionUrl,
+              section_ref: section,
+              text: doc.text,
+            }),
+          },
+        ],
       };
-    }
+    },
   );
 
   return server;
 }
 
+// Maximum accepted request body size — prevents OOM on the private network.
+// Legitimate MCP JSON-RPC messages are never remotely close to this limit.
+const MAX_REQUEST_BODY = Math.min(MAX_CONTENT_LENGTH, 1 * 1024 * 1024); // 1 MB
+
 async function main() {
   if (process.env.MCP_TRANSPORT === "http") {
     const port = parseInt(process.env.PORT ?? "3000", 10);
-    createServer(async (req, res) => {
+
+    const httpServer = createServer(async (req, res) => {
       if (req.url === "/health") {
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ status: "ok" }));
+        res.end(
+          JSON.stringify({
+            status: "ok",
+            service: "auslaw-mcp",
+            timestamp: new Date().toISOString(),
+          }),
+        );
         return;
       }
       // Per-request server + transport (required for stateless streamable HTTP).
@@ -551,13 +614,28 @@ async function main() {
       });
       try {
         await mcpServer.connect(transport);
+
+        // Accumulate body with size guard — reject oversized payloads early.
         const chunks: Buffer[] = [];
-        for await (const chunk of req) chunks.push(chunk as Buffer);
+        let totalBytes = 0;
+        for await (const chunk of req) {
+          totalBytes += (chunk as Buffer).length;
+          if (totalBytes > MAX_REQUEST_BODY) {
+            res.writeHead(413, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Request body too large" }));
+            return;
+          }
+          chunks.push(chunk as Buffer);
+        }
+
         const bodyStr = Buffer.concat(chunks).toString();
         const body = bodyStr ? (JSON.parse(bodyStr) as Record<string, unknown>) : undefined;
         await transport.handleRequest(req, res, body);
       } catch (err) {
-        console.error("auslaw-mcp request error:", err);
+        logger.error(
+          "auslaw-mcp request error",
+          err instanceof Error ? err : new Error(String(err)),
+        );
         if (!res.headersSent) {
           res.writeHead(500, { "Content-Type": "application/json" });
           res.end(
@@ -567,8 +645,16 @@ async function main() {
           );
         }
       }
-    }).listen(port, () => {
-      console.log(`auslaw-mcp HTTP transport listening on :${port}`);
+    });
+
+    httpServer.listen(port, () => {
+      logger.info(`auslaw-mcp HTTP transport listening on :${port}`);
+    });
+
+    // Graceful shutdown — Railway sends SIGTERM before replacing the container.
+    process.on("SIGTERM", () => {
+      logger.info("SIGTERM received, shutting down gracefully");
+      httpServer.close(() => process.exit(0));
     });
   } else {
     const server = createMcpServer();
@@ -578,6 +664,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error("Fatal server error", error);
+  logger.error("Fatal server error", error instanceof Error ? error : new Error(String(error)));
   process.exit(1);
 });

@@ -36,7 +36,7 @@ describe("fetchDocumentText", () => {
 
   it("throws for jade.io URLs (no longer supported)", async () => {
     await expect(fetchDocumentText("https://jade.io/article/68901")).rejects.toThrow(
-      /jade\.io.*not supported/i,
+      /jade\.io.*(?:no longer|not) supported/i,
     );
     expect(axios.get).not.toHaveBeenCalled();
     expect(axios.post).not.toHaveBeenCalled();

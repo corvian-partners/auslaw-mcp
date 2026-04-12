@@ -15,6 +15,7 @@ import { config } from "../config.js";
 import { MAX_CONTENT_LENGTH } from "../constants.js";
 import { assertFetchableUrl } from "../utils/url-guard.js";
 import { austliiRateLimiter } from "../utils/rate-limiter.js";
+import { logger } from "../utils/logger.js";
 
 export interface ParagraphBlock {
   number: number;
@@ -50,10 +51,12 @@ async function extractTextFromPdf(
     }
 
     // Otherwise, fall back to OCR
-    console.warn(`PDF at ${url} has minimal text, attempting OCR...`);
+    logger.warn(`PDF at ${url} has minimal text, attempting OCR`);
     return await performOcr(buffer);
   } catch (error) {
-    console.warn(`PDF parsing failed for ${url}, attempting OCR:`, error);
+    logger.warn(`PDF parsing failed for ${url}, attempting OCR`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return await performOcr(buffer);
   }
 }
@@ -192,7 +195,7 @@ function extractParagraphBlocks(html: string): ParagraphBlock[] {
 
   // Deduplicate by paragraph number — nested div/p matches can produce duplicates
   const seen = new Set<number>();
-  return paragraphs.filter(b => {
+  return paragraphs.filter((b) => {
     if (seen.has(b.number)) return false;
     seen.add(b.number);
     return true;
@@ -220,10 +223,7 @@ export async function fetchDocumentText(url: string): Promise<FetchResponse> {
   // Normalise old /cgi-bin/viewdoc/ URL format (retired, returns 410) to the
   // current direct path format. e.g.:
   //   /cgi-bin/viewdoc/au/cases/nsw/NSWSC/2026/129.html → /au/cases/…
-  url = url.replace(
-    /^(https?:\/\/(?:www\.)?austlii\.edu\.au)\/cgi-bin\/viewdoc\//,
-    "$1/",
-  );
+  url = url.replace(/^(https?:\/\/(?:www\.)?austlii\.edu\.au)\/cgi-bin\/viewdoc\//, "$1/");
 
   assertFetchableUrl(url);
 
