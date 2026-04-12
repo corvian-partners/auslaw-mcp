@@ -254,6 +254,9 @@ export async function fetchDocumentText(url: string): Promise<FetchResponse> {
       headers,
       timeout: config.austlii.timeout,
       maxContentLength: MAX_CONTENT_LENGTH,
+      // Disable automatic redirect following so the SSRF guard in assertFetchableUrl
+      // cannot be bypassed by a 301/302 from AustLII pointing to a non-allowlisted host.
+      maxRedirects: 0,
     });
 
     const buffer = Buffer.from(response.data);

@@ -123,7 +123,6 @@ function createMcpServer(): McpServer {
       const { query, jurisdiction, limit, format, sortBy, method, offset, fromYear, toYear } =
         searchCasesParser.parse(rawInput);
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let results = await searchAustLii(query, {
         type: "case",
         jurisdiction: jurisdiction as any,
@@ -629,7 +628,16 @@ async function main() {
         }
 
         const bodyStr = Buffer.concat(chunks).toString();
-        const body = bodyStr ? (JSON.parse(bodyStr) as Record<string, unknown>) : undefined;
+        let body: Record<string, unknown> | undefined;
+        if (bodyStr) {
+          try {
+            body = JSON.parse(bodyStr) as Record<string, unknown>;
+          } catch {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Invalid JSON in request body" }));
+            return;
+          }
+        }
         await transport.handleRequest(req, res, body);
       } catch (err) {
         logger.error(
@@ -660,6 +668,15 @@ async function main() {
     const server = createMcpServer();
     const transport = new StdioServerTransport();
     await server.connect(transport);
+
+    // Graceful shutdown for stdio mode — ensures in-flight tool calls complete
+    // before the process exits. Mirrors the HTTP-mode SIGTERM handler above.
+    process.on("SIGTERM", () => {
+      logger.info("SIGTERM received (stdio mode), shutting down gracefully");
+      void transport.close().catch(() => {});
+      void server.close().catch(() => {});
+      process.exit(0);
+    });
   }
 }
 
