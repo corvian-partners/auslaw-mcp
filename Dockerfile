@@ -1,6 +1,6 @@
 # Multi-stage Dockerfile for AusLaw MCP
 # Stage 1: Builder
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -16,7 +16,7 @@ COPY src ./src
 RUN npm run build
 
 # Stage 2: Runtime
-FROM node:20-alpine
+FROM node:22-alpine
 
 # Install Tesseract OCR and its dependencies
 RUN apk update && \
