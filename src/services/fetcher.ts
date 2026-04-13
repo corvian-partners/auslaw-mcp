@@ -259,6 +259,13 @@ export async function fetchDocumentText(url: string): Promise<FetchResponse> {
       maxRedirects: 0,
     });
 
+    // Axios with maxRedirects:0 returns the redirect response rather than throwing.
+    // Reject it explicitly so the SSRF guard cannot be bypassed by a redirect to
+    // a non-allowlisted host.
+    if (response.status >= 300 && response.status < 400) {
+      throw new Error(`Redirect blocked: ${response.headers["location"] ?? "(no location)"}`);
+    }
+
     const buffer = Buffer.from(response.data);
     const contentType = response.headers["content-type"] || "";
 

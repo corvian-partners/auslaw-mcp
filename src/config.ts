@@ -42,6 +42,7 @@ const EnvSchema = z.object({
 
 export interface Config {
   austlii: {
+    baseUrl: string;
     searchBase: string;
     referer: string;
     userAgent: string;
@@ -80,6 +81,7 @@ export function loadConfig(): Config {
 
   return {
     austlii: {
+      baseUrl: env.AUSTLII_BASE_URL,
       searchBase: env.AUSTLII_SEARCH_BASE,
       referer: env.AUSTLII_REFERER,
       userAgent: env.AUSTLII_USER_AGENT,

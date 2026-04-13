@@ -18,26 +18,60 @@ export interface SearchResult {
 }
 
 export type Jurisdiction =
-  | "cth" | "vic" | "nsw" | "qld" | "sa" | "wa" | "tas" | "nt" | "act"
-  | "federal" | "nz" | "other"
+  | "cth"
+  | "vic"
+  | "nsw"
+  | "qld"
+  | "sa"
+  | "wa"
+  | "tas"
+  | "nt"
+  | "act"
+  | "federal"
+  | "nz"
+  | "other"
   // Federal court codes
-  | "hca" | "fcafc" | "fca" | "fedcfamc1f" | "fedcfamc2f" | "fct"
+  | "hca"
+  | "fcafc"
+  | "fca"
+  | "fedcfamc1f"
+  | "fedcfamc2f"
+  | "fct"
   // NSW court codes
-  | "nswca" | "nswsc" | "nswdc" | "nswlec" | "nswcca" | "nswca_admin" | "ncat"
+  | "nswca"
+  | "nswsc"
+  | "nswdc"
+  | "nswlec"
+  | "nswcca"
+  | "nswca_admin"
+  | "ncat"
   // VIC court codes
-  | "vsca" | "vsc" | "vcat"
+  | "vsca"
+  | "vsc"
+  | "vcat"
   // QLD court codes
-  | "qca" | "qsc" | "qdc" | "qcat"
+  | "qca"
+  | "qsc"
+  | "qdc"
+  | "qcat"
   // WA court codes
-  | "wasca" | "wasc" | "sat"
+  | "wasca"
+  | "wasc"
+  | "sat"
   // SA court codes
-  | "sascfc" | "sasc" | "sacat"
+  | "sascfc"
+  | "sasc"
+  | "sacat"
   // TAS court codes
-  | "tasfc" | "tassc"
+  | "tasfc"
+  | "tassc"
   // NT court codes
-  | "ntsc" | "ntca"
+  | "ntsc"
+  | "ntca"
   // ACT court codes
-  | "actca" | "actsc" | "acat";
+  | "actca"
+  | "actsc"
+  | "acat";
 export type SearchMethod =
   | "auto"
   | "title"
@@ -191,31 +225,58 @@ export function buildSearchParams(query: string, options: SearchOptions): Search
   // Map jurisdiction codes to AustLII path segments
   const australianJurisdictions: Record<string, string> = {
     // State/territory codes (existing)
-    cth: "cth", vic: "vic", nsw: "nsw", qld: "qld",
-    sa: "sa", wa: "wa", tas: "tas", nt: "nt", act: "act",
+    cth: "cth",
+    vic: "vic",
+    nsw: "nsw",
+    qld: "qld",
+    sa: "sa",
+    wa: "wa",
+    tas: "tas",
+    nt: "nt",
+    act: "act",
     federal: "cth",
     // Federal court codes → cth
-    hca: "cth", fcafc: "cth", fca: "cth",
-    fedcfamc1f: "cth", fedcfamc2f: "cth",
-    fct: "cth",   // Federal Circuit and Family Court
+    hca: "cth",
+    fcafc: "cth",
+    fca: "cth",
+    fedcfamc1f: "cth",
+    fedcfamc2f: "cth",
+    fct: "cth", // Federal Circuit and Family Court
     // NSW court codes → nsw
-    nswca: "nsw", nswsc: "nsw", nswdc: "nsw",
-    nswlec: "nsw", nswcca: "nsw", nswca_admin: "nsw",
+    nswca: "nsw",
+    nswsc: "nsw",
+    nswdc: "nsw",
+    nswlec: "nsw",
+    nswcca: "nsw",
+    nswca_admin: "nsw",
     ncat: "nsw",
     // VIC court codes → vic
-    vsca: "vic", vsc: "vic", vcat: "vic",
+    vsca: "vic",
+    vsc: "vic",
+    vcat: "vic",
     // QLD court codes → qld
-    qca: "qld", qsc: "qld", qdc: "qld", qcat: "qld",
+    qca: "qld",
+    qsc: "qld",
+    qdc: "qld",
+    qcat: "qld",
     // WA court codes → wa
-    wasca: "wa", wasc: "wa", sat: "wa",
+    wasca: "wa",
+    wasc: "wa",
+    sat: "wa",
     // SA court codes → sa
-    sascfc: "sa", sasc: "sa", sacat: "sa",
+    sascfc: "sa",
+    sasc: "sa",
+    sacat: "sa",
     // TAS court codes → tas
-    tasfc: "tas", tassc: "tas",
+    tasfc: "tas",
+    tassc: "tas",
     // NT court codes → nt
-    ntsc: "nt", ntca: "nt",
+    ntsc: "nt",
+    ntca: "nt",
     // ACT court codes → act
-    actca: "act", actsc: "act", acat: "act",
+    actca: "act",
+    actsc: "act",
+    acat: "act",
   };
 
   // Handle New Zealand - use /austlii meta with nz mask_path
@@ -320,6 +381,10 @@ export async function searchAustLii(
       timeout: config.austlii.timeout,
     });
 
+    if (response.status !== 200) {
+      throw new Error(`AustLII search returned HTTP ${response.status}`);
+    }
+
     const html = response.data;
     const $ = cheerio.load(html);
     const results: SearchResult[] = [];
@@ -357,7 +422,7 @@ export async function searchAustLii(
             cleanUrl = `${basePath}?${remaining}`;
           }
         }
-        url = `https://www.austlii.edu.au${cleanUrl}`;
+        url = `${config.austlii.baseUrl}${cleanUrl}`;
       }
 
       if (title && url) {

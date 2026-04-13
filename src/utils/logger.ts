@@ -28,7 +28,7 @@ class Logger {
    */
   debug(message: string, meta?: Record<string, unknown>): void {
     if (this.level <= LogLevel.DEBUG) {
-      console.error(`[DEBUG] ${message}`, meta ?? "");
+      console.log(`[DEBUG] ${message}`, meta ?? "");
     }
   }
 
@@ -40,7 +40,7 @@ class Logger {
    */
   info(message: string, meta?: Record<string, unknown>): void {
     if (this.level <= LogLevel.INFO) {
-      console.error(`[INFO] ${message}`, meta ?? "");
+      console.log(`[INFO] ${message}`, meta ?? "");
     }
   }
 
