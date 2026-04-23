@@ -24,7 +24,8 @@ We will respond within 48 hours and provide updates as the issue is addressed.
 ## Security Considerations
 
 This tool:
-- Makes HTTP requests to AustLII and jade.io
+
+- Makes HTTP requests to AustLII (`www.austlii.edu.au`) only — other hosts are rejected by the SSRF guard
 - Does not store user data
 - Does not require authentication
 - Runs locally as an MCP server
@@ -49,6 +50,7 @@ This tool:
 ### Dependency Vulnerabilities
 
 We monitor dependencies for vulnerabilities using:
+
 - `npm audit`
 - Dependabot alerts
 - Regular dependency updates
@@ -56,10 +58,11 @@ We monitor dependencies for vulnerabilities using:
 ### External API Calls
 
 This tool makes requests to:
-- AustLII (public legal database)
-- jade.io (if user provides URLs)
+
+- AustLII (public legal database) — the only allowlisted host
 
 Users should:
+
 - Respect terms of service of these platforms
 - Implement rate limiting in production use
 - Not expose this tool to untrusted input sources
@@ -67,6 +70,7 @@ Users should:
 ### OCR Processing
 
 When processing PDFs with OCR:
+
 - Temporary files are created in system temp directory
 - Files are cleaned up after processing
 - Tesseract runs locally (no data sent externally)
@@ -74,6 +78,7 @@ When processing PDFs with OCR:
 ## Security Updates
 
 Security updates are released as soon as possible after a vulnerability is confirmed. Users should:
+
 - Subscribe to GitHub releases
 - Monitor npm advisories
 - Update promptly when security releases are published

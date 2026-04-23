@@ -16,11 +16,11 @@ describe("fetchDocumentText (mocked)", () => {
     mockedAxios.isAxiosError.mockReturnValue(false);
   });
 
-  it("should throw a descriptive error for jade.io URLs instead of returning empty content", async () => {
-    // jade.io is a GWT SPA — HTTP fetch returns a JS bootstrap shell, not judgment text.
-    // Silently returning empty content is misleading; we want a clear, actionable error.
+  it("should reject non-AustLII URLs (e.g. jade.io) via the SSRF allowlist", async () => {
+    // Only AustLII hosts are permitted — the URL guard rejects jade.io before
+    // any network request is attempted.
     await expect(fetchDocumentText("https://jade.io/article/67401")).rejects.toThrow(
-      /jade\.io.*(?:no longer|not) supported|fetch_document_text.*jade\.io/i,
+      /not in permitted/i,
     );
   });
 

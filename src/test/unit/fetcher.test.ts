@@ -34,9 +34,9 @@ describe("fetchDocumentText", () => {
     vi.restoreAllMocks();
   });
 
-  it("throws for jade.io URLs (no longer supported)", async () => {
+  it("rejects non-AustLII URLs (e.g. jade.io) via the SSRF guard", async () => {
     await expect(fetchDocumentText("https://jade.io/article/68901")).rejects.toThrow(
-      /jade\.io.*(?:no longer|not) supported/i,
+      /not in permitted/i,
     );
     expect(axios.get).not.toHaveBeenCalled();
     expect(axios.post).not.toHaveBeenCalled();

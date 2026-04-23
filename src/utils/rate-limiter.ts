@@ -31,26 +31,33 @@ export class RateLimiter {
   throttle(): Promise<void> {
     return new Promise<void>((resolve) => {
       this.queue.push(resolve);
-      void this.drain();
+      // Flip the flag synchronously before `drain()` yields so a second
+      // concurrent caller on the same tick cannot also enter the drain loop.
+      if (!this.draining) {
+        this.draining = true;
+        void this.drain();
+      }
     });
   }
 
   private async drain(): Promise<void> {
-    if (this.draining) return;
-    this.draining = true;
-    while (this.queue.length > 0) {
-      this.refill();
-      if (this.tokens >= 1) {
-        this.tokens--;
-        this.queue.shift()!();
-      } else {
-        const msUntilToken = this.msPerToken - ((Date.now() - this.lastRefill) % this.msPerToken);
-        await new Promise<void>((r) => setTimeout(r, Math.max(1, msUntilToken)));
+    try {
+      while (this.queue.length > 0) {
+        this.refill();
+        if (this.tokens >= 1) {
+          this.tokens--;
+          const next = this.queue.shift();
+          if (next) next();
+        } else {
+          const msUntilToken = this.msPerToken - ((Date.now() - this.lastRefill) % this.msPerToken);
+          await new Promise<void>((r) => setTimeout(r, Math.max(1, msUntilToken)));
+        }
       }
+    } finally {
+      this.draining = false;
     }
-    this.draining = false;
   }
 }
 
 export const austliiRateLimiter = new RateLimiter(10); // 10 req/min
-export const lawciteRateLimiter = new RateLimiter(5);  // 5 req/min
+export const lawciteRateLimiter = new RateLimiter(5); // 5 req/min
