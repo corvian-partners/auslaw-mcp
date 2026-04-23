@@ -31,17 +31,19 @@ npm run lint:fix       # Auto-fix lint issues
 
 ## Tools
 
+All tools are prefixed `auslaw_` for namespace clarity:
+
 | Tool | Description |
 |---|---|
-| `search_cases` | AustLII case search with authority-based ranking |
-| `search_legislation` | AustLII legislation search |
-| `fetch_document_text` | Fetch full text from AustLII URL (HTML/PDF/OCR) |
-| `search_citing_cases` | LawCite citator — find cases that cite a given citation |
-| `search_by_citation` | Resolve neutral citation to AustLII URL |
-| `validate_citation` | Validate and resolve a neutral citation via AustLII HEAD request |
-| `format_citation` | AGLC4 citation formatting |
-| `generate_pinpoint` | Generate paragraph-level pinpoint reference |
-| `fetch_legislation_section` | Fetch a specific section or schedule from an Act on AustLII |
+| `auslaw_search_cases` | AustLII case search with authority-based ranking |
+| `auslaw_search_legislation` | AustLII legislation search |
+| `auslaw_fetch_document_text` | Fetch full text from AustLII URL (HTML/PDF/OCR) |
+| `auslaw_search_citing_cases` | LawCite citator — find cases that cite a given citation |
+| `auslaw_search_by_citation` | Resolve neutral citation to AustLII URL |
+| `auslaw_validate_citation` | Validate and resolve a neutral citation via AustLII HEAD request |
+| `auslaw_format_citation` | AGLC4 citation formatting |
+| `auslaw_generate_pinpoint` | Generate paragraph-level pinpoint reference |
+| `auslaw_fetch_legislation_section` | Fetch a specific section or schedule from an Act on AustLII |
 
 ## Environment Variables
 

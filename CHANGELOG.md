@@ -7,7 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (BREAKING)
+
+- All MCP tools renamed with `auslaw_` prefix for namespace clarity:
+  `search_cases` → `auslaw_search_cases`, `search_legislation` → `auslaw_search_legislation`,
+  `fetch_document_text` → `auslaw_fetch_document_text`, `search_citing_cases` → `auslaw_search_citing_cases`,
+  `search_by_citation` → `auslaw_search_by_citation`, `validate_citation` → `auslaw_validate_citation`,
+  `format_citation` → `auslaw_format_citation`, `generate_pinpoint` → `auslaw_generate_pinpoint`,
+  `fetch_legislation_section` → `auslaw_fetch_legislation_section`.
+- Search JSON responses now wrap results as `{ totalResults, results }` instead of a bare array.
+
 ### Added
+
+- Tool annotations (`readOnlyHint`, `idempotentHint`, `openWorldHint`) on every tool.
+- Exponential-backoff retry with jitter for transient AustLII / LawCite failures (5xx, 429, 408, network).
+- Expanded `/health?deep=1` endpoint probes AustLII reachability and Tesseract availability.
+- `format_citation`, `validate_citation`, `generate_pinpoint` now honour the `format` parameter (json / text / markdown).
+- Centralised HTTP header builders in `src/utils/headers.ts` (AustLII nav, search, HEAD, LawCite).
+
+### Fixed
+
+- Rate-limiter race condition where concurrent `throttle()` calls on the same tick could both enter `drain()` (FIFO was not guaranteed under high concurrency).
+- Paragraph extraction dedup no longer silently drops legitimate duplicate paragraph numbers with distinct text.
+- `pdf-parse` null-guard: `textResult?.text` before `.trim()` to avoid crash on empty PDFs.
+- Unsafe non-null assertion on court code in `validateCitation`.
+- CI/engine mismatch: CI was testing Node 20 & 22 while `package.json` required `>=22`. Now tests Node 22 & 24.
+
+### Security
+
+- `npm audit fix` applied — patched `follow-redirects` (GHSA-r4q5-vmmm-2653) and `hono` (GHSA-458j-xx4x-4375). 0 vulnerabilities remaining.
+
+### Removed
+
+- Stale jade.io references from `SECURITY.md` and `fetcher.ts`. SSRF allowlist already blocks non-AustLII hosts, making the explicit jade.io check redundant.
+
+### Added (previous entries)
 
 - jade.io search integration via AustLII cross-referencing (no API access required)
   - `search_jade` MCP tool for searching jade.io cases/legislation

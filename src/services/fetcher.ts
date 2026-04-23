@@ -12,9 +12,11 @@ import * as fs from "fs/promises";
 // package (GHSA-8j44-735h-w4w2: OS command injection via recognize() params).
 const execFileAsync = promisify(execFile);
 import { config } from "../config.js";
-import { MAX_CONTENT_LENGTH } from "../constants.js";
+import { MAX_CONTENT_LENGTH, OCR_MIN_TEXT_LENGTH } from "../constants.js";
 import { assertFetchableUrl } from "../utils/url-guard.js";
 import { austliiRateLimiter } from "../utils/rate-limiter.js";
+import { austliiNavigationHeaders } from "../utils/headers.js";
+import { withRetry } from "../utils/retry.js";
 import { logger } from "../utils/logger.js";
 
 export interface ParagraphBlock {
@@ -43,10 +45,10 @@ async function extractTextFromPdf(
     const parser = new PDFParse({ data: new Uint8Array(buffer) });
     const textResult = await parser.getText();
     await parser.destroy();
-    const extractedText = textResult.text.trim();
+    const extractedText = (textResult?.text ?? "").trim();
 
     // If we got substantial text, return it
-    if (extractedText.length > 100) {
+    if (extractedText.length >= OCR_MIN_TEXT_LENGTH) {
       return { text: extractedText, ocrUsed: false };
     }
 
@@ -182,6 +184,9 @@ function extractParagraphBlocks(html: string): ParagraphBlock[] {
   const $ = cheerio.load(html);
   const paragraphs: ParagraphBlock[] = [];
 
+  // Only match paragraph markers of the form `[123]` at the start of a block.
+  // Non-numeric markers (e.g. `[1a]`, `[A1]`) are rare in AustLII judgments but
+  // are not AGLC4 pinpoint targets, so we deliberately skip them here.
   $("p, div").each((_, el) => {
     const text = $(el).text().trim();
     const match = text.match(/^\[(\d+)\]\s*([\s\S]+)/);
@@ -193,11 +198,15 @@ function extractParagraphBlocks(html: string): ParagraphBlock[] {
     }
   });
 
-  // Deduplicate by paragraph number — nested div/p matches can produce duplicates
-  const seen = new Set<number>();
+  // Nested div/p matches often produce near-duplicate entries with identical
+  // leading text. Dedupe by (number + first 64 chars of text) so genuinely
+  // distinct paragraphs that happen to share a number (e.g. a reproduced
+  // quotation) are preserved.
+  const seen = new Set<string>();
   return paragraphs.filter((b) => {
-    if (seen.has(b.number)) return false;
-    seen.add(b.number);
+    const key = `${b.number}::${b.text.slice(0, 64)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
     return true;
   });
 }
@@ -213,13 +222,6 @@ function extractParagraphBlocks(html: string): ParagraphBlock[] {
  * @throws {Error} If the network request fails or the content type is unsupported
  */
 export async function fetchDocumentText(url: string): Promise<FetchResponse> {
-  // jade.io URLs are no longer supported — reject before the SSRF guard.
-  if (url.includes("jade.io")) {
-    throw new Error(
-      "jade.io URLs are no longer supported. Use an AustLII URL or neutral citation instead.",
-    );
-  }
-
   // Normalise old /cgi-bin/viewdoc/ URL format (retired, returns 410) to the
   // current direct path format. e.g.:
   //   /cgi-bin/viewdoc/au/cases/nsw/NSWSC/2026/129.html → /au/cases/…
@@ -228,43 +230,42 @@ export async function fetchDocumentText(url: string): Promise<FetchResponse> {
   assertFetchableUrl(url);
 
   try {
-    await austliiRateLimiter.throttle();
-
-    // AustLII uses Vary: User-Agent and returns 410 for stale/bot-like UAs.
-    // Include the same Sec-Fetch-* and client-hint headers a real Chrome
-    // browser sends on a top-level navigation.
-    const headers: Record<string, string> = {
-      "User-Agent": config.austlii.userAgent,
-      Accept:
-        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-      "Accept-Language": "en-AU,en-GB;q=0.9,en;q=0.8",
-      "Accept-Encoding": "gzip, deflate, br, zstd",
-      "Upgrade-Insecure-Requests": "1",
-      "Sec-Fetch-Dest": "document",
-      "Sec-Fetch-Mode": "navigate",
-      "Sec-Fetch-Site": "same-origin",
-      "Sec-Fetch-User": "?1",
-      "sec-ch-ua": '"Google Chrome";v="147", "Not.A/Brand";v="8", "Chromium";v="147"',
-      "sec-ch-ua-mobile": "?0",
-      "sec-ch-ua-platform": '"macOS"',
-    };
-
-    const response = await axios.get(url, {
-      responseType: "arraybuffer",
-      headers,
-      timeout: config.austlii.timeout,
-      maxContentLength: MAX_CONTENT_LENGTH,
-      // Disable automatic redirect following so the SSRF guard in assertFetchableUrl
-      // cannot be bypassed by a 301/302 from AustLII pointing to a non-allowlisted host.
-      maxRedirects: 0,
-    });
-
-    // Axios with maxRedirects:0 returns the redirect response rather than throwing.
-    // Reject it explicitly so the SSRF guard cannot be bypassed by a redirect to
-    // a non-allowlisted host.
-    if (response.status >= 300 && response.status < 400) {
-      throw new Error(`Redirect blocked: ${response.headers["location"] ?? "(no location)"}`);
-    }
+    // SSRF redirect guard: allow up to 5 same-domain AustLII redirects (e.g.
+    // /cgi-bin/viewdoc/ → /au/cases/…) but block any redirect that points to a
+    // private/internal IP range or a non-AustLII host.
+    const response = await withRetry(
+      async () => {
+        await austliiRateLimiter.throttle();
+        return axios.get(url, {
+          responseType: "arraybuffer",
+          headers: austliiNavigationHeaders(),
+          timeout: config.austlii.timeout,
+          maxContentLength: MAX_CONTENT_LENGTH,
+          maxRedirects: 5,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          beforeRedirect(options: Record<string, any>) {
+            const hostname: string = options["hostname"] ?? "";
+            const privateRanges = [
+              /^127\./,
+              /^10\./,
+              /^192\.168\./,
+              /^172\.(1[6-9]|2\d|3[01])\./,
+              /^169\.254\./,
+              /^::1$/,
+              /^fc00:/i,
+              /^fe80:/i,
+            ];
+            if (privateRanges.some((re) => re.test(hostname))) {
+              throw new Error(`Redirect to private address blocked: ${hostname}`);
+            }
+            if (!hostname.endsWith("austlii.edu.au")) {
+              throw new Error(`Redirect to non-AustLII host blocked: ${hostname}`);
+            }
+          },
+        });
+      },
+      { label: `AustLII fetch ${url}` },
+    );
 
     const buffer = Buffer.from(response.data);
     const contentType = response.headers["content-type"] || "";

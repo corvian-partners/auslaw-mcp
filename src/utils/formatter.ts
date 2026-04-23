@@ -27,15 +27,23 @@ export function formatSearchResults(
   results: SearchResult[],
   format: ResponseFormat,
 ): CallToolResult {
+  if (results.length === 0 && format !== "json") {
+    return { content: ensureContent("No results found.") };
+  }
   switch (format) {
-    case "json":
+    case "json": {
+      const payload = {
+        totalResults: results.length,
+        results,
+      };
       return {
-        content: ensureContent(JSON.stringify(results, null, 2)),
+        content: ensureContent(JSON.stringify(payload, null, 2)),
         structuredContent: {
           format: "json",
-          data: results,
+          data: payload,
         },
       };
+    }
     case "html": {
       const rows = results
         .map((result) => {

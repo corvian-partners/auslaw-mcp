@@ -77,7 +77,7 @@ describe("formatSearchResults", () => {
     const result = formatSearchResults([], "json");
     expect(result.content.length).toBeGreaterThan(0);
     const parsed = JSON.parse(getText(result.content));
-    expect(parsed).toEqual([]);
+    expect(parsed).toEqual({ totalResults: 0, results: [] });
   });
 
   it("should escape HTML entities in html format", () => {
@@ -175,7 +175,7 @@ describe("formatFetchResponse", () => {
   it("should use preserved HTML structure when available", () => {
     const fetchWithHtml: FetchResponse = {
       ...sampleFetch,
-      html: '<article><h1>Smith v Jones</h1><p>[1] Appeal allowed.</p></article>',
+      html: "<article><h1>Smith v Jones</h1><p>[1] Appeal allowed.</p></article>",
     };
     const result = formatFetchResponse(fetchWithHtml, "html");
     const text = getText(result.content);
@@ -187,7 +187,7 @@ describe("formatFetchResponse", () => {
   it("html format includes print-friendly stylesheet when html field present", () => {
     const fetchWithHtml: FetchResponse = {
       ...sampleFetch,
-      html: '<article><p>Judgment text</p></article>',
+      html: "<article><p>Judgment text</p></article>",
     };
     const result = formatFetchResponse(fetchWithHtml, "html");
     const text = getText(result.content);

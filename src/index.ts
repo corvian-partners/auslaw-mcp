@@ -18,6 +18,8 @@ import {
 } from "./services/citation.js";
 import { config } from "./config.js";
 import { lawciteRateLimiter } from "./utils/rate-limiter.js";
+import { lawciteHeaders } from "./utils/headers.js";
+import { withRetry } from "./utils/retry.js";
 import { logger } from "./utils/logger.js";
 import { MAX_CONTENT_LENGTH } from "./constants.js";
 
@@ -63,12 +65,17 @@ function createMcpServer(): McpServer {
   const searchLegislationParser = z.object(searchLegislationShape);
 
   server.registerTool(
-    "search_legislation",
+    "auslaw_search_legislation",
     {
       title: "Search Legislation",
       description:
         "Search Australian and New Zealand legislation. Jurisdiction codes — state/territory: cth, nsw, vic, qld, sa, wa, tas, nt, act, federal, nz, other (omit for all). Methods: auto, title (titles only), phrase (exact match), all (all words), any (any word), near (proximity), legis (legislation names). Use offset for pagination.",
       inputSchema: searchLegislationShape,
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
     },
     async (rawInput) => {
       const { query, jurisdiction, limit, format, sortBy, method, offset } =
@@ -112,12 +119,17 @@ function createMcpServer(): McpServer {
   const searchCasesParser = z.object(searchCasesShape);
 
   server.registerTool(
-    "search_cases",
+    "auslaw_search_cases",
     {
       title: "Search Cases",
       description:
         "Search Australian and New Zealand case law. Jurisdiction codes — state/territory: cth, nsw, vic, qld, sa, wa, tas, nt, act, federal, nz, other; court-specific: hca, fca, fcafc, fcca, nswca, nswcca, nswsc, nswdc, nswlec, vicca, vsc, qca, qsc, sasc, wasc, tassc, ntsc, actsc (omit for all). Methods: auto, title (case names only), phrase (exact match), all (all words), any (any word), near (proximity), boolean. Sorting: auto (smart detection), relevance, date. Use offset for pagination (e.g., offset=50 for page 2).",
       inputSchema: searchCasesShape,
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
     },
     async (rawInput) => {
       const { query, jurisdiction, limit, format, sortBy, method, offset, fromYear, toYear } =
@@ -153,12 +165,17 @@ function createMcpServer(): McpServer {
   const fetchDocumentParser = z.object(fetchDocumentShape);
 
   server.registerTool(
-    "fetch_document_text",
+    "auslaw_fetch_document_text",
     {
       title: "Fetch Document Text",
       description:
         "Fetch full text for a legislation or case URL (AustLII), with OCR fallback for scanned PDFs.",
       inputSchema: fetchDocumentShape,
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
     },
     async (rawInput) => {
       const { url, format } = fetchDocumentParser.parse(rawInput);
@@ -179,19 +196,25 @@ function createMcpServer(): McpServer {
       .describe(
         "Citation style: neutral (neutral only), reported (reported only), combined (both)",
       ),
+    format: formatEnum.optional(),
   };
   const formatCitationParser = z.object(formatCitationShape);
 
   server.registerTool(
-    "format_citation",
+    "auslaw_format_citation",
     {
       title: "Format AGLC4 Citation",
       description:
         "Format an Australian case citation according to AGLC4 rules. Combines case name, neutral citation, reported citation, and optional pinpoint into the correct format.",
       inputSchema: formatCitationShape,
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async (rawInput) => {
-      const { title, neutralCitation, reportedCitation, pinpoint, style } =
+      const { title, neutralCitation, reportedCitation, pinpoint, style, format } =
         formatCitationParser.parse(rawInput);
 
       const info = {
@@ -201,6 +224,14 @@ function createMcpServer(): McpServer {
         pinpoint,
       };
       const formatted = formatAGLC4(info);
+      const fmt = format ?? "text";
+      const payload = { citation: formatted, ...info };
+      if (fmt === "json") {
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }],
+          structuredContent: payload,
+        };
+      }
       return { content: [{ type: "text" as const, text: formatted }] };
     },
   );
@@ -208,22 +239,36 @@ function createMcpServer(): McpServer {
   // ── validate_citation ─────────────────────────────────────────────────────
   const validateCitationShape = {
     citation: z.string().min(1).describe("Neutral citation to validate, e.g. '[1992] HCA 23'"),
+    format: formatEnum.optional(),
   };
   const validateCitationParser = z.object(validateCitationShape);
 
   server.registerTool(
-    "validate_citation",
+    "auslaw_validate_citation",
     {
       title: "Validate Citation Against AustLII",
       description:
         "Validate a neutral citation by checking it exists on AustLII. Returns the canonical URL if valid.",
       inputSchema: validateCitationShape,
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
     },
     async (rawInput) => {
-      const { citation } = validateCitationParser.parse(rawInput);
+      const { citation, format } = validateCitationParser.parse(rawInput);
       const result = await validateCitation(citation);
+      const fmt = format ?? "json";
+      if (fmt === "text" || fmt === "markdown") {
+        const line = result.valid
+          ? `Valid: ${result.canonicalCitation} → ${result.austliiUrl}`
+          : `Invalid: ${result.message ?? "not found"}${result.austliiUrl ? ` (tried ${result.austliiUrl})` : ""}`;
+        return { content: [{ type: "text" as const, text: line }] };
+      }
       return {
         content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+        structuredContent: { ...result } as Record<string, unknown>,
       };
     },
   );
@@ -237,6 +282,7 @@ function createMcpServer(): McpServer {
       .string()
       .optional()
       .describe("Case citation to prepend to the pinpoint, e.g. '[2022] FedCFamC2F 786'"),
+    format: formatEnum.optional(),
   };
   const generatePinpointParser = z
     .object(generatePinpointShape)
@@ -246,48 +292,58 @@ function createMcpServer(): McpServer {
     );
 
   server.registerTool(
-    "generate_pinpoint",
+    "auslaw_generate_pinpoint",
     {
       title: "Generate Pinpoint Citation",
       description:
         "Fetch a judgment from AustLII and generate a pinpoint citation to a specific paragraph (by number or by searching for a phrase).",
       inputSchema: generatePinpointShape,
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
     },
     async (rawInput) => {
-      const { url, paragraphNumber, phrase, caseCitation } = generatePinpointParser.parse(rawInput);
+      const { url, paragraphNumber, phrase, caseCitation, format } =
+        generatePinpointParser.parse(rawInput);
+      const fmt = format ?? "json";
+      const respond = (payload: Record<string, unknown>, isError = false) => {
+        if (fmt === "text" || fmt === "markdown") {
+          if (isError) {
+            return {
+              content: [{ type: "text" as const, text: String(payload["error"] ?? "error") }],
+              isError: true,
+            };
+          }
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: String(payload["fullCitation"] ?? payload["pinpointString"] ?? ""),
+              },
+            ],
+          };
+        }
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }],
+          structuredContent: payload,
+          ...(isError ? { isError: true } : {}),
+        };
+      };
+
       const doc = await fetchDocumentText(url);
       if (!doc.paragraphs || doc.paragraphs.length === 0) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({ error: "No paragraph blocks found in document" }),
-            },
-          ],
-        };
+        return respond({ error: "No paragraph blocks found in document" }, true);
       }
       const pinpoint = generatePinpoint(doc.paragraphs, { paragraphNumber, phrase });
       if (!pinpoint) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({ error: "Paragraph not found" }),
-            },
-          ],
-        };
+        return respond({ error: "Paragraph not found" }, true);
       }
       const fullCitation = caseCitation
         ? `${caseCitation} ${pinpoint.pinpointString}`
         : pinpoint.pinpointString;
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({ ...pinpoint, fullCitation }, null, 2),
-          },
-        ],
-      };
+      return respond({ ...pinpoint, fullCitation });
     },
   );
 
@@ -302,12 +358,17 @@ function createMcpServer(): McpServer {
   const searchByCitationParser = z.object(searchByCitationShape);
 
   server.registerTool(
-    "search_by_citation",
+    "auslaw_search_by_citation",
     {
       title: "Search by Citation",
       description:
         "Find a case by its citation. If a neutral citation is detected, validates it against AustLII and returns the direct URL. Otherwise performs a case name search.",
       inputSchema: searchByCitationShape,
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
     },
     async (rawInput) => {
       const { citation, format } = searchByCitationParser.parse(rawInput);
@@ -350,12 +411,17 @@ function createMcpServer(): McpServer {
   const searchCitingCasesParser = z.object(searchCitingCasesShape);
 
   server.registerTool(
-    "search_citing_cases",
+    "auslaw_search_citing_cases",
     {
       title: "Search Citing Cases (Citator)",
       description:
         "Find cases that cite a given case. Uses LawCite (AustLII's citator service) to find citing cases. Returns citing cases with case names, AustLII URLs, neutral citations, and court/date information where available.",
       inputSchema: searchCitingCasesShape,
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
     },
     async (rawInput) => {
       const { citation, format } = searchCitingCasesParser.parse(rawInput);
@@ -370,17 +436,18 @@ function createMcpServer(): McpServer {
       }
 
       async function searchLawCite(cit: string): Promise<CitingCaseResult[]> {
-        await lawciteRateLimiter.throttle();
         const lawciteUrl = `${config.lawcite.baseUrl}?cit=${encodeURIComponent(cit)}&nolinks=1`;
-        const response = await axios.get(lawciteUrl, {
-          headers: {
-            "User-Agent": config.austlii.userAgent,
-            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            Referer: "https://www.austlii.edu.au/",
+        const response = await withRetry(
+          async () => {
+            await lawciteRateLimiter.throttle();
+            return axios.get(lawciteUrl, {
+              headers: lawciteHeaders(),
+              timeout: config.lawcite.timeout,
+              responseType: "text",
+            });
           },
-          timeout: config.lawcite.timeout,
-          responseType: "text",
-        });
+          { label: "LawCite lookup" },
+        );
 
         const $ = cheerio.load(response.data as string);
         const results: CitingCaseResult[] = [];
@@ -465,12 +532,12 @@ function createMcpServer(): McpServer {
 
   // ── fetch_legislation_section ─────────────────────────────────────────────
   server.registerTool(
-    "fetch_legislation_section",
+    "auslaw_fetch_legislation_section",
     {
       title: "Fetch Legislation Section",
       description:
         "Fetch the text of a specific section or schedule from an Australian Act on AustLII. " +
-        "More efficient than fetch_document_text on the whole Act when you only need one provision. " +
+        "More efficient than auslaw_fetch_document_text on the whole Act when you only need one provision. " +
         "Accepts the Act's AustLII URL and a section reference like '18', 's 18', 'section 18', 'schedule 1'.",
       inputSchema: {
         url: z
@@ -483,6 +550,11 @@ function createMcpServer(): McpServer {
           .string()
           .min(1)
           .describe("Section reference, e.g. '18', 's 18', 'section 18A', 'schedule 1', 'sch 2'"),
+      },
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+        openWorldHint: true,
       },
     },
     async (rawInput) => {
@@ -583,20 +655,57 @@ function createMcpServer(): McpServer {
 // Legitimate MCP JSON-RPC messages are never remotely close to this limit.
 const MAX_REQUEST_BODY = Math.min(MAX_CONTENT_LENGTH, 1 * 1024 * 1024); // 1 MB
 
+interface DependencyProbe {
+  status: "ok" | "error" | "missing";
+  latencyMs?: number;
+  detail?: string;
+}
+
+async function probeAustLii(): Promise<DependencyProbe> {
+  const start = Date.now();
+  try {
+    await axios.head(config.austlii.baseUrl, {
+      timeout: 5000,
+      headers: { "User-Agent": config.austlii.userAgent },
+    });
+    return { status: "ok", latencyMs: Date.now() - start };
+  } catch (err) {
+    return { status: "error", detail: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+async function probeTesseract(): Promise<DependencyProbe> {
+  try {
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const execFileAsync = promisify(execFile);
+    const { stdout } = await execFileAsync("tesseract", ["--version"], { timeout: 3000 });
+    const version = stdout.split("\n")[0]?.trim();
+    return { status: "ok", detail: version };
+  } catch {
+    return { status: "missing", detail: "tesseract not available on PATH" };
+  }
+}
+
 async function main() {
   if (process.env.MCP_TRANSPORT === "http") {
     const port = parseInt(process.env.PORT ?? "3000", 10);
 
     const httpServer = createServer(async (req, res) => {
-      if (req.url === "/health") {
+      if (req.url === "/health" || req.url?.startsWith("/health?")) {
+        const deep = req.url.includes("deep=1");
+        const health: Record<string, unknown> = {
+          status: "ok",
+          service: "auslaw-mcp",
+          timestamp: new Date().toISOString(),
+        };
+        if (deep) {
+          const [austlii, tesseract] = await Promise.all([probeAustLii(), probeTesseract()]);
+          health["dependencies"] = { austlii, tesseract };
+          if (austlii.status !== "ok") health["status"] = "degraded";
+        }
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(
-          JSON.stringify({
-            status: "ok",
-            service: "auslaw-mcp",
-            timestamp: new Date().toISOString(),
-          }),
-        );
+        res.end(JSON.stringify(health));
         return;
       }
       // Per-request server + transport (required for stateless streamable HTTP).

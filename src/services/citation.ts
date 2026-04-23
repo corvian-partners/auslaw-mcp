@@ -14,6 +14,8 @@ import {
 } from "../constants.js";
 import type { ParagraphBlock } from "./fetcher.js";
 import { austliiRateLimiter } from "../utils/rate-limiter.js";
+import { austliiHeadHeaders } from "../utils/headers.js";
+import { withRetry } from "../utils/retry.js";
 
 export interface ParsedCitation {
   neutralCitation?: string;
@@ -144,23 +146,25 @@ export async function validateCitation(citation: string): Promise<CitationValida
     };
   }
   const [, year, court, num] = match;
-  const path = COURT_TO_AUSTLII_PATH[court!];
+  if (!court || !year || !num) {
+    return { valid: false, message: "Malformed neutral citation" };
+  }
+  const path = COURT_TO_AUSTLII_PATH[court];
   if (!path) {
     return { valid: false, message: `Unknown court code: ${court}` };
   }
   const url = `https://www.austlii.edu.au/${path}/${year}/${num}.html`;
   try {
-    await austliiRateLimiter.throttle();
-    await axios.head(url, {
-      timeout: 10000,
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "same-origin",
+    await withRetry(
+      async () => {
+        await austliiRateLimiter.throttle();
+        return axios.head(url, {
+          timeout: 10000,
+          headers: austliiHeadHeaders(),
+        });
       },
-    });
+      { label: `validate citation ${normalised}`, retries: 1 },
+    );
     return { valid: true, canonicalCitation: normalised, austliiUrl: url };
   } catch {
     return {
