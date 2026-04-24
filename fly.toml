@@ -1,0 +1,60 @@
+# auslaw-mcp on Fly.io — Sydney region (clean ASN for AustLII Cloudflare gate).
+#
+# Rationale: Railway's Singapore pool is GCP (ASN 15169); Cloudflare's bot
+# management challenges GCP egress regardless of TLS fingerprint. Fly.io has
+# its own ASN and a real Sydney region, so AustLII's CF edge should let
+# curl-impersonate traffic through.
+#
+# Private networking: cp-legal-mcp talks to this service via Fly's 6PN
+# ("<app>.internal"), so no public port is needed for the MCP transport.
+# The /diag/egress and /health endpoints share the same HTTP listener; if
+# you need them externally, expose services below.
+
+app = "auslaw-mcp"
+primary_region = "syd"
+
+[build]
+dockerfile = "Dockerfile"
+
+[env]
+MCP_TRANSPORT = "http"
+PORT = "3000"
+LOG_LEVEL = "1"
+NODE_ENV = "production"
+# Dockerfile already sets AUSTLII_SEARCH_BASE / AUSTLII_REFERER / AUSTLII_TIMEOUT.
+# Override here only if you want a different UA than the Dockerfile default.
+
+# Public HTTP service — keep it reachable so /diag/egress can be curled from
+# your laptop during the migration. Lock down (remove [[services]]) once
+# you're satisfied and cp-legal-mcp is the only caller.
+[[services]]
+  protocol = "tcp"
+  internal_port = 3000
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+    force_https = true
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+  [services.concurrency]
+    type = "requests"
+    hard_limit = 50
+    soft_limit = 40
+
+  [[services.http_checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "20s"
+    method = "get"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
