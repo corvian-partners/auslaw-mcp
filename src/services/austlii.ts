@@ -1,10 +1,33 @@
 import * as cheerio from "cheerio";
+import { z } from "zod";
 import { config } from "../config.js";
 import { REPORTED_CITATION_PATTERNS } from "../constants.js";
 import { austliiRateLimiter } from "../utils/rate-limiter.js";
 import { austliiSearchHeaders } from "../utils/headers.js";
 import { withRetry } from "../utils/retry.js";
-import { impersonateFetch, warmupSession } from "../utils/impersonate-fetch.js";
+import { logger } from "../utils/logger.js";
+import {
+  impersonateFetch,
+  warmupSession,
+  detectCloudflareChallenge,
+} from "../utils/impersonate-fetch.js";
+
+// Zod schema for parsed search rows — guards against AustLII HTML surprises
+// (layout shifts, empty <li>, missing href) so one malformed row can't poison
+// the whole result set. Validation is structural only; semantic fields like
+// jurisdiction/year are optional because we derive them heuristically.
+const SearchResultSchema = z.object({
+  title: z.string().min(1),
+  url: z.string().url(),
+  citation: z.string().optional(),
+  neutralCitation: z.string().optional(),
+  reportedCitation: z.string().optional(),
+  source: z.literal("austlii"),
+  summary: z.string().optional(),
+  jurisdiction: z.string().optional(),
+  year: z.string().optional(),
+  type: z.enum(["case", "legislation"]),
+});
 
 export interface SearchResult {
   title: string;
@@ -371,6 +394,14 @@ export async function searchAustLii(
       throw new Error(`AustLII search returned HTTP ${response.status}`);
     }
 
+    const challengeMarker = detectCloudflareChallenge(response);
+    if (challengeMarker) {
+      throw new Error(
+        "AustLII search is temporarily unavailable — Cloudflare is challenging server-side requests on /cgi-bin/sinosrch.cgi. " +
+          "Try auslaw_search_by_citation to resolve a known citation, or auslaw_fetch_document_text to fetch a specific URL directly.",
+      );
+    }
+
     const html = response.data.toString("utf8");
     const $ = cheerio.load(html);
     const results: SearchResult[] = [];
@@ -451,18 +482,28 @@ export async function searchAustLii(
         // Try to extract reported citation from title
         const reportedCitation = extractReportedCitation(title);
 
-        results.push({
+        const candidate = {
           title,
           citation: undefined,
           neutralCitation,
           reportedCitation,
           url,
-          source: "austlii",
+          source: "austlii" as const,
           summary: court ? `${court}${dateStr ? ` - ${dateStr}` : ""}` : dateStr,
           jurisdiction,
           year,
           type: options.type,
-        });
+        };
+        const parsed = SearchResultSchema.safeParse(candidate);
+        if (!parsed.success) {
+          logger.warn("Skipped malformed AustLII search row", {
+            title: title?.slice(0, 120),
+            url,
+            issues: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
+          });
+          return;
+        }
+        results.push(parsed.data as SearchResult);
       }
     });
 

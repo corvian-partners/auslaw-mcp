@@ -107,6 +107,39 @@ export interface ImpersonateResponse {
   data: Buffer;
 }
 
+/**
+ * Thrown when Cloudflare presents a JS challenge or managed challenge that no
+ * HTTP client (including TLS-impersonated curl) can solve. Call sites should
+ * translate this into a user-facing message rather than an empty result.
+ */
+export class CloudflareChallengeError extends Error {
+  constructor(
+    public readonly url: string,
+    public readonly marker: string,
+  ) {
+    super(`Cloudflare challenge page served for ${url} (marker: ${marker})`);
+    this.name = "CloudflareChallengeError";
+  }
+}
+
+/**
+ * Heuristic detector for CF challenge / managed-challenge interstitials.
+ * Returns a non-null marker string when the response looks like a challenge,
+ * otherwise null. Only inspected for 2xx HTML responses — non-2xx status codes
+ * are handled by the caller's status check.
+ */
+export function detectCloudflareChallenge(res: ImpersonateResponse): string | null {
+  if (res.headers["cf-mitigated"] === "challenge") return "cf-mitigated:challenge";
+  const ct = res.headers["content-type"] ?? "";
+  if (!ct.includes("text/html")) return null;
+  // Only peek at first ~4KB — challenge pages declare themselves early.
+  const head = res.data.subarray(0, 4096).toString("utf8");
+  if (/<title>\s*Just a moment/i.test(head)) return "title:just-a-moment";
+  if (/challenge-platform|cf_chl_opt|__cf_chl_rt_tk/.test(head)) return "body:challenge-platform";
+  if (/Attention Required!.*Cloudflare/is.test(head)) return "body:attention-required";
+  return null;
+}
+
 interface ImpersonateOptions {
   method?: "GET" | "HEAD" | "POST";
   headers?: Record<string, string>;

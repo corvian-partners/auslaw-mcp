@@ -3,7 +3,11 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createServer } from "node:http";
 import { z } from "zod";
-import { impersonateFetch, warmupSession } from "./utils/impersonate-fetch.js";
+import {
+  impersonateFetch,
+  warmupSession,
+  detectCloudflareChallenge,
+} from "./utils/impersonate-fetch.js";
 import * as cheerio from "cheerio";
 
 import { formatFetchResponse, formatSearchResults } from "./utils/formatter.js";
@@ -661,6 +665,32 @@ interface DependencyProbe {
   detail?: string;
 }
 
+/**
+ * One-shot startup check that fetches the AustLII homepage and reports whether
+ * the TLS/JA4 bypass is actually working. Never blocks startup — pure logging.
+ */
+async function verifyBypassOnStartup(): Promise<void> {
+  try {
+    const r = await impersonateFetch("https://www.austlii.edu.au/", {
+      timeout: 10_000,
+      headers: { "User-Agent": config.austlii.userAgent },
+    });
+    const challenge = detectCloudflareChallenge(r);
+    if (r.status === 200 && !challenge) {
+      logger.info("AustLII startup probe: JA4 bypass OK", { status: r.status });
+    } else {
+      logger.error(
+        "AustLII startup probe: bypass NOT working — tools will fail with 403/challenge. Check curl-impersonate binary in container.",
+        { status: r.status, challenge: challenge ?? "none" },
+      );
+    }
+  } catch (err) {
+    logger.error("AustLII startup probe: fetch failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 async function probeAustLii(): Promise<DependencyProbe> {
   const start = Date.now();
   try {
@@ -770,6 +800,10 @@ async function main() {
 
     httpServer.listen(port, () => {
       logger.info(`auslaw-mcp HTTP transport listening on :${port}`);
+      // Fire-and-forget JA4 bypass verification. Logs loudly if curl-impersonate
+      // is missing or the AustLII fetch fails — saves 30 min of head-scratching
+      // when a container image upgrade drops the binary.
+      void verifyBypassOnStartup();
     });
 
     // Graceful shutdown — Railway sends SIGTERM before replacing the container.

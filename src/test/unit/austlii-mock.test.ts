@@ -6,6 +6,7 @@ import { AUSTLII_SEARCH_HTML } from "../fixtures/index.js";
 vi.mock("../../utils/impersonate-fetch.js", () => ({
   impersonateFetch: vi.fn(),
   warmupSession: vi.fn().mockResolvedValue(undefined),
+  detectCloudflareChallenge: vi.fn().mockReturnValue(null),
 }));
 const mockedFetch = vi.mocked(impersonateFetch);
 
