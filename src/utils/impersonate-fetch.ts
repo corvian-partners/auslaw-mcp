@@ -17,9 +17,17 @@
  */
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, unlinkSync } from "node:fs";
+import {
+  mkdtempSync,
+  writeFileSync,
+  readFileSync,
+  existsSync,
+  unlinkSync,
+  chmodSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { randomBytes } from "node:crypto";
 import { logger } from "./logger.js";
 
 const execFileAsync = promisify(execFile);
@@ -30,8 +38,15 @@ const CURL_BIN = process.env.CURL_IMPERSONATE_BIN ?? "curl_chrome124";
 
 // Per-process cookie jar file. curl reads/writes Netscape-format cookies
 // here; this preserves `__cf_bm` across requests within the lifetime of
-// this process.
+// this process. Create as world-writable (0700 is fine since mkdtempSync
+// returns a dir owned by the current uid, but we ensure write perm
+// explicitly for defence against odd container umasks).
 const COOKIE_DIR = mkdtempSync(join(tmpdir(), "auslaw-ci-"));
+try {
+  chmodSync(COOKIE_DIR, 0o700);
+} catch {
+  // best-effort — if chmod isn't allowed, mkdtempSync's default is fine.
+}
 const COOKIE_JAR = join(COOKIE_DIR, "cookies.txt");
 
 export interface ImpersonateResponse {
@@ -68,34 +83,39 @@ export async function impersonateFetch(
   const maxBytes = options.maxContentLength ?? 50 * 1024 * 1024;
   const maxRedirects = options.maxRedirects ?? 5;
 
-  // Write body to a tempfile so we never expose it on the command line
-  // (curl's --data-binary @file reads straight from disk).
+  // Tempfiles for request body (if POST), response body, and response headers.
+  // Writing to tempfiles rather than stdout/stderr avoids curl exit code 23
+  // ("failed writing received data") that occurred on Railway when
+  // /dev/stderr wasn't writable in the exec environment.
+  const reqId = randomBytes(8).toString("hex");
+  const outFile = join(COOKIE_DIR, `out-${reqId}`);
+  const headFile = join(COOKIE_DIR, `hdr-${reqId}`);
   let bodyFile: string | null = null;
+
   const args: string[] = [
     "--silent",
     "--show-error",
     "--compressed",
     "--http2",
+    "--location",
     "--max-time",
     String(Math.ceil(timeoutMs / 1000)),
     "--max-redirs",
     String(maxRedirects),
     "--max-filesize",
     String(maxBytes),
-    // Cookie jar: read existing cookies and write back any new ones.
     "--cookie",
     COOKIE_JAR,
     "--cookie-jar",
     COOKIE_JAR,
-    // -D writes response headers to stdout alongside the body; we separate
-    // them with a custom marker below.
-    "--write-out",
-    "__HTTP_STATUS__:%{http_code}\\n",
+    "--output",
+    outFile,
+    "--dump-header",
+    headFile,
   ];
 
   if (method === "HEAD") {
-    // -X HEAD keeps our stdout/stderr split (body→stdout, headers→stderr);
-    // --head would redirect headers to stdout and break our parser.
+    // -X HEAD keeps the output shape consistent with GET.
     args.push("--request", "HEAD");
   } else if (method === "POST") {
     if (options.body) {
@@ -103,7 +123,7 @@ export async function impersonateFetch(
         typeof options.body === "string"
           ? options.body
           : new URLSearchParams(options.body).toString();
-      bodyFile = join(COOKIE_DIR, `body-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      bodyFile = join(COOKIE_DIR, `body-${reqId}`);
       writeFileSync(bodyFile, encoded);
       args.push("--data-binary", `@${bodyFile}`);
     }
@@ -116,25 +136,36 @@ export async function impersonateFetch(
     args.push("-H", `${k}: ${v}`);
   }
 
-  // Dump response headers to stderr so we can parse them without mangling
-  // the body (which may be binary — PDFs).
-  args.push("--dump-header", "/dev/stderr");
-  args.push("--output", "-"); // body to stdout
   args.push(url);
 
   try {
-    const { stdout, stderr } = await execFileAsync(CURL_BIN, args, {
-      encoding: "buffer",
-      maxBuffer: maxBytes + 64 * 1024,
+    await execFileAsync(CURL_BIN, args, {
+      // We only care that curl exits 0; all real output is in tempfiles.
+      maxBuffer: 256 * 1024,
       timeout: timeoutMs + 5_000,
     });
+  } catch (err: unknown) {
+    // Clean up any tempfiles curl may have created before we rethrow.
+    for (const f of [outFile, headFile, bodyFile].filter(Boolean) as string[]) {
+      if (existsSync(f)) {
+        try {
+          unlinkSync(f);
+        } catch {
+          /* best-effort */
+        }
+      }
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.warn("impersonateFetch failed", { url, error: msg });
+    throw new Error(`impersonate fetch failed for ${url}: ${msg}`);
+  }
 
-    // Split status line + headers from stderr. curl writes one block per
-    // hop on redirect; we want the last block only.
-    const headerBlocks = stderr
-      .toString("utf8")
-      .split(/\r?\n\r?\n/)
-      .filter((b) => b.trim());
+  try {
+    const headerText = existsSync(headFile) ? readFileSync(headFile, "utf8") : "";
+    const data = existsSync(outFile) ? readFileSync(outFile) : Buffer.alloc(0);
+
+    // curl writes one header block per hop on redirects; take the last.
+    const headerBlocks = headerText.split(/\r?\n\r?\n/).filter((b) => b.trim());
     const lastBlock = headerBlocks[headerBlocks.length - 1] ?? "";
     const headerLines = lastBlock.split(/\r?\n/);
     const statusLine = headerLines[0] ?? "";
@@ -151,23 +182,15 @@ export async function impersonateFetch(
       if (name) headers[name] = value;
     }
 
-    // Strip the --write-out suffix that we appended to stdout.
-    const bodyBuf = Buffer.from(stdout);
-    const marker = Buffer.from("__HTTP_STATUS__:");
-    const markerIdx = bodyBuf.lastIndexOf(marker);
-    const data = markerIdx >= 0 ? bodyBuf.subarray(0, markerIdx) : bodyBuf;
-
     return { status, statusText, headers, data };
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    logger.warn("impersonateFetch failed", { url, error: msg });
-    throw new Error(`impersonate fetch failed for ${url}: ${msg}`);
   } finally {
-    if (bodyFile && existsSync(bodyFile)) {
-      try {
-        unlinkSync(bodyFile);
-      } catch {
-        // best-effort cleanup
+    for (const f of [outFile, headFile, bodyFile].filter(Boolean) as string[]) {
+      if (existsSync(f)) {
+        try {
+          unlinkSync(f);
+        } catch {
+          /* best-effort */
+        }
       }
     }
   }
