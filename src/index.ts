@@ -691,6 +691,119 @@ async function verifyBypassOnStartup(): Promise<void> {
   }
 }
 
+/**
+ * Egress diagnostics — reports the outbound IP + how AustLII Cloudflare
+ * treats it, with and without TLS impersonation. Purpose: confirm whether
+ * 403s on /cgi-bin/sinosrch.cgi are IP-reputation-driven (Railway datacenter
+ * range) or TLS-fingerprint-driven (curl-impersonate binary missing).
+ *
+ * Exposed at `/diag/egress` — not authenticated, but returns no secrets.
+ */
+interface EgressReport {
+  egress: { ip?: string; asn?: string; country?: string; error?: string };
+  austliiRootImpersonated: { status: number; challenge: string | null; ms: number; error?: string };
+  austliiRootPlainFetch: { status: number; challenge: string | null; ms: number; error?: string };
+  austliiSearchImpersonated: {
+    status: number;
+    challenge: string | null;
+    ms: number;
+    error?: string;
+  };
+  verdict: string;
+}
+
+async function probeEgressIp(): Promise<EgressReport["egress"]> {
+  try {
+    const r = await fetch("https://ifconfig.co/json", {
+      signal: AbortSignal.timeout(5_000),
+      headers: { "User-Agent": "auslaw-mcp-diag/1.0" },
+    });
+    if (!r.ok) return { error: `HTTP ${r.status}` };
+    const j = (await r.json()) as { ip?: string; asn_org?: string; country?: string };
+    return { ip: j.ip, asn: j.asn_org, country: j.country };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+async function probeUrl(
+  url: string,
+  useImpersonate: boolean,
+): Promise<{ status: number; challenge: string | null; ms: number; error?: string }> {
+  const start = Date.now();
+  try {
+    if (useImpersonate) {
+      const r = await impersonateFetch(url, {
+        timeout: 10_000,
+        headers: { "User-Agent": config.austlii.userAgent },
+      });
+      return { status: r.status, challenge: detectCloudflareChallenge(r), ms: Date.now() - start };
+    }
+    const r = await fetch(url, {
+      signal: AbortSignal.timeout(10_000),
+      headers: { "User-Agent": config.austlii.userAgent },
+    });
+    const buf = Buffer.from(await r.arrayBuffer());
+    const headers: Record<string, string> = {};
+    r.headers.forEach((v, k) => (headers[k.toLowerCase()] = v));
+    const challenge = detectCloudflareChallenge({
+      status: r.status,
+      statusText: r.statusText,
+      headers,
+      data: buf,
+    });
+    return { status: r.status, challenge, ms: Date.now() - start };
+  } catch (err) {
+    return {
+      status: 0,
+      challenge: null,
+      ms: Date.now() - start,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+async function buildEgressReport(): Promise<EgressReport> {
+  const searchUrl = `${config.austlii.searchBase}?meta=%2Fau&method=auto&query=test`;
+  const [egress, rootImp, rootPlain, searchImp] = await Promise.all([
+    probeEgressIp(),
+    probeUrl("https://www.austlii.edu.au/", true),
+    probeUrl("https://www.austlii.edu.au/", false),
+    probeUrl(searchUrl, true),
+  ]);
+
+  // Verdict heuristics:
+  //   - Both impersonated succeed: no problem to diagnose.
+  //   - Impersonated root OK but search challenged: CF path-level rule on sinosrch.cgi.
+  //   - Both root requests fail: likely IP reputation (nothing helps).
+  //   - Plain fetch works, impersonated fails: weird — check binary.
+  //   - Plain fetch fails, impersonated works: TLS fingerprint was the issue, bypass healthy.
+  let verdict = "inconclusive";
+  const rootImpOk = rootImp.status === 200 && !rootImp.challenge;
+  const rootPlainOk = rootPlain.status === 200 && !rootPlain.challenge;
+  const searchImpOk = searchImp.status === 200 && !searchImp.challenge;
+  if (rootImpOk && searchImpOk) verdict = "healthy — bypass working on all paths";
+  else if (rootImpOk && !searchImpOk)
+    verdict =
+      "CF challenges /cgi-bin/sinosrch.cgi specifically — likely path-level rule, not IP reputation. Use citation-based alternatives.";
+  else if (!rootImpOk && !rootPlainOk)
+    verdict =
+      "AustLII CF blocks this egress IP on ALL paths — strong IP reputation signal, consider proxy/egress change.";
+  else if (rootPlainOk && !rootImpOk)
+    verdict =
+      "curl-impersonate regression — plain fetch succeeds but impersonated fails. Check binary.";
+  else if (!rootPlainOk && rootImpOk)
+    verdict = "TLS fingerprint bypass is load-bearing — plain fetch blocked, impersonated OK.";
+
+  return {
+    egress,
+    austliiRootImpersonated: rootImp,
+    austliiRootPlainFetch: rootPlain,
+    austliiSearchImpersonated: searchImp,
+    verdict,
+  };
+}
+
 async function probeAustLii(): Promise<DependencyProbe> {
   const start = Date.now();
   try {
@@ -726,6 +839,17 @@ async function main() {
     const port = parseInt(process.env.PORT ?? "3000", 10);
 
     const httpServer = createServer(async (req, res) => {
+      if (req.url === "/diag/egress") {
+        try {
+          const report = await buildEgressReport();
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(report, null, 2));
+        } catch (err) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
+        }
+        return;
+      }
       if (req.url === "/health" || req.url?.startsWith("/health?")) {
         const deep = req.url.includes("deep=1");
         const health: Record<string, unknown> = {
