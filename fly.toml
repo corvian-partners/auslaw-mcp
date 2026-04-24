@@ -7,48 +7,36 @@
 #
 # Private networking: cp-legal-mcp talks to this service via Fly's 6PN
 # ("<app>.internal"), so no public port is needed for the MCP transport.
-# The /diag/egress and /health endpoints share the same HTTP listener; if
-# you need them externally, expose services below.
+# The /diag/egress and /health endpoints share the same HTTP listener; keep
+# [http_service] while migrating so you can curl diagnostics from your
+# laptop, then remove it once cp-legal-mcp is the only caller.
 
 app = "auslaw-mcp"
 primary_region = "syd"
 
 [build]
-dockerfile = "Dockerfile"
+  dockerfile = "Dockerfile"
 
 [env]
-MCP_TRANSPORT = "http"
-PORT = "3000"
-LOG_LEVEL = "1"
-NODE_ENV = "production"
-# Dockerfile already sets AUSTLII_SEARCH_BASE / AUSTLII_REFERER / AUSTLII_TIMEOUT.
-# Override here only if you want a different UA than the Dockerfile default.
+  MCP_TRANSPORT = "http"
+  PORT = "3000"
+  LOG_LEVEL = "1"
+  NODE_ENV = "production"
 
-# Public HTTP service — keep it reachable so /diag/egress can be curled from
-# your laptop during the migration. Lock down (remove [[services]]) once
-# you're satisfied and cp-legal-mcp is the only caller.
-[[services]]
-  protocol = "tcp"
+[http_service]
   internal_port = 3000
+  force_https = true
   auto_stop_machines = "off"
   auto_start_machines = true
   min_machines_running = 1
+  processes = ["app"]
 
-  [[services.ports]]
-    port = 80
-    handlers = ["http"]
-    force_https = true
-
-  [[services.ports]]
-    port = 443
-    handlers = ["tls", "http"]
-
-  [services.concurrency]
+  [http_service.concurrency]
     type = "requests"
     hard_limit = 50
     soft_limit = 40
 
-  [[services.http_checks]]
+  [[http_service.checks]]
     interval = "30s"
     timeout = "5s"
     grace_period = "20s"
