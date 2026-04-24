@@ -3,7 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createServer } from "node:http";
 import { z } from "zod";
-import { impersonateFetch, warmupSession } from "./utils/impersonate-fetch.js";
+import axios from "axios";
 import * as cheerio from "cheerio";
 
 import { formatFetchResponse, formatSearchResults } from "./utils/formatter.js";
@@ -437,19 +437,19 @@ function createMcpServer(): McpServer {
 
       async function searchLawCite(cit: string): Promise<CitingCaseResult[]> {
         const lawciteUrl = `${config.lawcite.baseUrl}?cit=${encodeURIComponent(cit)}&nolinks=1`;
-        await warmupSession();
         const response = await withRetry(
           async () => {
             await lawciteRateLimiter.throttle();
-            return impersonateFetch(lawciteUrl, {
+            return axios.get(lawciteUrl, {
               headers: lawciteHeaders(),
               timeout: config.lawcite.timeout,
+              responseType: "text",
             });
           },
           { label: "LawCite lookup" },
         );
 
-        const $ = cheerio.load(response.data.toString("utf8"));
+        const $ = cheerio.load(response.data as string);
         const results: CitingCaseResult[] = [];
 
         // LawCite results: links to austlii.edu.au cases within the body
@@ -664,14 +664,10 @@ interface DependencyProbe {
 async function probeAustLii(): Promise<DependencyProbe> {
   const start = Date.now();
   try {
-    const r = await impersonateFetch(config.austlii.baseUrl, {
-      method: "HEAD",
+    await axios.head(config.austlii.baseUrl, {
       timeout: 5000,
       headers: { "User-Agent": config.austlii.userAgent },
     });
-    if (r.status >= 400) {
-      return { status: "error", detail: `HTTP ${r.status}`, latencyMs: Date.now() - start };
-    }
     return { status: "ok", latencyMs: Date.now() - start };
   } catch (err) {
     return { status: "error", detail: err instanceof Error ? err.message : String(err) };
