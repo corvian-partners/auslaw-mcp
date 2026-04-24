@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import axios from "axios";
+import { impersonateFetch } from "../../utils/impersonate-fetch.js";
+
+vi.mock("../../utils/impersonate-fetch.js", () => ({
+  impersonateFetch: vi.fn(),
+  warmupSession: vi.fn().mockResolvedValue(undefined),
+}));
 import {
   parseCitation,
   formatAGLC4,
@@ -123,7 +128,12 @@ describe("validateCitation", () => {
   });
 
   it("returns valid=true for known neutral citation (mocked 200)", async () => {
-    vi.spyOn(axios, "head").mockResolvedValueOnce({ status: 200 });
+    vi.mocked(impersonateFetch).mockResolvedValueOnce({
+      status: 200,
+      statusText: "OK",
+      headers: {},
+      data: Buffer.alloc(0),
+    });
     const result = await validateCitation("[1992] HCA 23");
     expect(result.valid).toBe(true);
     expect(result.austliiUrl).toContain("HCA");
@@ -135,7 +145,12 @@ describe("validateCitation", () => {
   });
 
   it("returns valid=false on 404 (mocked)", async () => {
-    vi.spyOn(axios, "head").mockRejectedValueOnce({ response: { status: 404 } });
+    vi.mocked(impersonateFetch).mockResolvedValueOnce({
+      status: 404,
+      statusText: "Not Found",
+      headers: {},
+      data: Buffer.alloc(0),
+    });
     const result = await validateCitation("[9999] HCA 999");
     expect(result.valid).toBe(false);
   });

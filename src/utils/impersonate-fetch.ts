@@ -36,6 +36,56 @@ const execFileAsync = promisify(execFile);
 // profile (e.g. curl_chrome124). Falls back to a reasonable default.
 const CURL_BIN = process.env.CURL_IMPERSONATE_BIN ?? "curl_chrome124";
 
+// If the binary isn't on PATH (local dev, CI without Docker), fall through
+// to Node's fetch. Production runs in the Docker image which ships the
+// lexiforest musl build, so this fallback only fires in dev/test.
+let _curlAvailable: boolean | null = null;
+async function curlAvailable(): Promise<boolean> {
+  if (_curlAvailable !== null) return _curlAvailable;
+  try {
+    await execFileAsync(CURL_BIN, ["--version"], { timeout: 5_000 });
+    _curlAvailable = true;
+  } catch {
+    _curlAvailable = false;
+    logger.warn(
+      `curl-impersonate binary (${CURL_BIN}) not found — falling back to Node fetch. AustLII will 403 in production without this binary.`,
+    );
+  }
+  return _curlAvailable;
+}
+
+async function fetchFallback(
+  url: string,
+  options: ImpersonateOptions,
+): Promise<ImpersonateResponse> {
+  const method = options.method ?? "GET";
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), options.timeout ?? 30_000);
+  try {
+    const body =
+      method === "POST" && options.body
+        ? typeof options.body === "string"
+          ? options.body
+          : new URLSearchParams(options.body).toString()
+        : undefined;
+    const res = await fetch(url, {
+      method,
+      headers: options.headers,
+      body,
+      redirect: "follow",
+      signal: controller.signal,
+    });
+    const headers: Record<string, string> = {};
+    res.headers.forEach((v, k) => {
+      headers[k.toLowerCase()] = v;
+    });
+    const buf = Buffer.from(await res.arrayBuffer());
+    return { status: res.status, statusText: res.statusText, headers, data: buf };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Per-process cookie jar file. curl reads/writes Netscape-format cookies
 // here; this preserves `__cf_bm` across requests within the lifetime of
 // this process. Create as world-writable (0700 is fine since mkdtempSync
@@ -78,6 +128,8 @@ export async function impersonateFetch(
   url: string,
   options: ImpersonateOptions = {},
 ): Promise<ImpersonateResponse> {
+  if (!(await curlAvailable())) return fetchFallback(url, options);
+
   const method = options.method ?? "GET";
   const timeoutMs = options.timeout ?? 30_000;
   const maxBytes = options.maxContentLength ?? 50 * 1024 * 1024;

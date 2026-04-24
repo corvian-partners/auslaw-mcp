@@ -1,19 +1,30 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import axios from "axios";
+import { impersonateFetch } from "../../utils/impersonate-fetch.js";
 import { fetchDocumentText } from "../../services/fetcher.js";
 import { AUSTLII_JUDGMENT_HTML } from "../fixtures/index.js";
 
-vi.mock("axios");
+vi.mock("../../utils/impersonate-fetch.js", () => ({
+  impersonateFetch: vi.fn(),
+  warmupSession: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("file-type", () => ({
   fileTypeFromBuffer: vi.fn().mockResolvedValue(undefined),
 }));
 
-const mockedAxios = vi.mocked(axios, true);
+const mockedFetch = vi.mocked(impersonateFetch);
+
+function mockResponse(body: string | Buffer, contentType: string, status = 200) {
+  return {
+    status,
+    statusText: status === 200 ? "OK" : "",
+    headers: { "content-type": contentType },
+    data: typeof body === "string" ? Buffer.from(body) : body,
+  };
+}
 
 describe("fetchDocumentText (mocked)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockedAxios.isAxiosError.mockReturnValue(false);
   });
 
   it("should reject non-AustLII URLs (e.g. jade.io) via the SSRF allowlist", async () => {
@@ -25,11 +36,7 @@ describe("fetchDocumentText (mocked)", () => {
   });
 
   it("should extract text from HTML content", async () => {
-    mockedAxios.get.mockResolvedValue({
-      data: Buffer.from(AUSTLII_JUDGMENT_HTML),
-      status: 200,
-      headers: { "content-type": "text/html" },
-    });
+    mockedFetch.mockResolvedValue(mockResponse(AUSTLII_JUDGMENT_HTML, "text/html", 200));
 
     const result = await fetchDocumentText(
       "https://www.austlii.edu.au/au/cases/cth/HCA/2024/1.html",
@@ -39,11 +46,7 @@ describe("fetchDocumentText (mocked)", () => {
   });
 
   it("should preserve paragraph numbers [N] in extracted text", async () => {
-    mockedAxios.get.mockResolvedValue({
-      data: Buffer.from(AUSTLII_JUDGMENT_HTML),
-      status: 200,
-      headers: { "content-type": "text/html" },
-    });
+    mockedFetch.mockResolvedValue(mockResponse(AUSTLII_JUDGMENT_HTML, "text/html", 200));
 
     const result = await fetchDocumentText(
       "https://www.austlii.edu.au/au/cases/cth/HCA/2024/1.html",
@@ -53,11 +56,7 @@ describe("fetchDocumentText (mocked)", () => {
   });
 
   it("should set correct metadata fields", async () => {
-    mockedAxios.get.mockResolvedValue({
-      data: Buffer.from(AUSTLII_JUDGMENT_HTML),
-      status: 200,
-      headers: { "content-type": "text/html" },
-    });
+    mockedFetch.mockResolvedValue(mockResponse(AUSTLII_JUDGMENT_HTML, "text/html", 200));
 
     const result = await fetchDocumentText(
       "https://www.austlii.edu.au/au/cases/cth/HCA/2024/1.html",
@@ -70,11 +69,7 @@ describe("fetchDocumentText (mocked)", () => {
   });
 
   it("should set ocrUsed to false for HTML content", async () => {
-    mockedAxios.get.mockResolvedValue({
-      data: Buffer.from(AUSTLII_JUDGMENT_HTML),
-      status: 200,
-      headers: { "content-type": "text/html" },
-    });
+    mockedFetch.mockResolvedValue(mockResponse(AUSTLII_JUDGMENT_HTML, "text/html", 200));
 
     const result = await fetchDocumentText(
       "https://www.austlii.edu.au/au/cases/cth/HCA/2024/1.html",
@@ -84,11 +79,7 @@ describe("fetchDocumentText (mocked)", () => {
 
   it("should handle plain text content type", async () => {
     const plainText = "This is a plain text legal document.";
-    mockedAxios.get.mockResolvedValue({
-      data: Buffer.from(plainText),
-      status: 200,
-      headers: { "content-type": "text/plain" },
-    });
+    mockedFetch.mockResolvedValue(mockResponse(plainText, "text/plain", 200));
 
     const result = await fetchDocumentText(
       "https://www.austlii.edu.au/au/cases/cth/HCA/2024/doc.txt",
@@ -99,9 +90,7 @@ describe("fetchDocumentText (mocked)", () => {
   });
 
   it("should throw on axios failure", async () => {
-    const axiosError = new Error("Connection refused");
-    mockedAxios.get.mockRejectedValue(axiosError);
-    mockedAxios.isAxiosError.mockReturnValue(true);
+    mockedFetch.mockRejectedValue(new Error("Connection refused"));
 
     await expect(
       fetchDocumentText("https://www.austlii.edu.au/au/cases/cth/HCA/2024/1.html"),
@@ -109,11 +98,7 @@ describe("fetchDocumentText (mocked)", () => {
   });
 
   it("should preserve cleaned HTML in response.html for HTML content", async () => {
-    mockedAxios.get.mockResolvedValue({
-      data: Buffer.from(AUSTLII_JUDGMENT_HTML),
-      status: 200,
-      headers: { "content-type": "text/html" },
-    });
+    mockedFetch.mockResolvedValue(mockResponse(AUSTLII_JUDGMENT_HTML, "text/html", 200));
 
     const result = await fetchDocumentText(
       "https://www.austlii.edu.au/au/cases/cth/HCA/2024/1.html",
@@ -128,11 +113,7 @@ describe("fetchDocumentText (mocked)", () => {
 
   it("should not set html field for plain text content", async () => {
     const plainText = "This is a plain text legal document.";
-    mockedAxios.get.mockResolvedValue({
-      data: Buffer.from(plainText),
-      status: 200,
-      headers: { "content-type": "text/plain" },
-    });
+    mockedFetch.mockResolvedValue(mockResponse(plainText, "text/plain", 200));
 
     const result = await fetchDocumentText(
       "https://www.austlii.edu.au/au/cases/cth/HCA/2024/doc.txt",
@@ -141,11 +122,7 @@ describe("fetchDocumentText (mocked)", () => {
   });
 
   it("should throw for unsupported content type", async () => {
-    mockedAxios.get.mockResolvedValue({
-      data: Buffer.from("binary data"),
-      status: 200,
-      headers: { "content-type": "application/octet-stream" },
-    });
+    mockedFetch.mockResolvedValue(mockResponse("binary data", "application/octet-stream", 200));
 
     await expect(
       fetchDocumentText("https://www.austlii.edu.au/au/cases/cth/HCA/2024/file.bin"),

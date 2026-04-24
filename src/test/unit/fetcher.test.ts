@@ -1,9 +1,12 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
-import axios from "axios";
 import { fileTypeFromBuffer } from "file-type";
+import { impersonateFetch } from "../../utils/impersonate-fetch.js";
 
 vi.mock("file-type");
-vi.mock("axios");
+vi.mock("../../utils/impersonate-fetch.js", () => ({
+  impersonateFetch: vi.fn(),
+  warmupSession: vi.fn().mockResolvedValue(undefined),
+}));
 
 const mockConfig = vi.hoisted(() => ({
   lawcite: {
@@ -27,7 +30,6 @@ import { fetchDocumentText } from "../../services/fetcher.js";
 describe("fetchDocumentText", () => {
   beforeEach(() => {
     vi.mocked(fileTypeFromBuffer).mockResolvedValue(undefined);
-    vi.mocked(axios.isAxiosError).mockReturnValue(false);
   });
 
   afterEach(() => {
@@ -38,8 +40,7 @@ describe("fetchDocumentText", () => {
     await expect(fetchDocumentText("https://jade.io/article/68901")).rejects.toThrow(
       /not in permitted/i,
     );
-    expect(axios.get).not.toHaveBeenCalled();
-    expect(axios.post).not.toHaveBeenCalled();
+    expect(impersonateFetch).not.toHaveBeenCalled();
   });
 
   it("extracts paragraph blocks from AustLII HTML with [N] markers", async () => {
@@ -49,10 +50,11 @@ describe("fetchDocumentText", () => {
       <p>[3] Third paragraph concluding.</p>
     </body></html>`;
 
-    vi.mocked(axios.get).mockResolvedValueOnce({
-      data: Buffer.from(html),
-      headers: { "content-type": "text/html" },
+    vi.mocked(impersonateFetch).mockResolvedValueOnce({
       status: 200,
+      statusText: "OK",
+      headers: { "content-type": "text/html" },
+      data: Buffer.from(html),
     });
 
     const result = await fetchDocumentText("https://www.austlii.edu.au/case");

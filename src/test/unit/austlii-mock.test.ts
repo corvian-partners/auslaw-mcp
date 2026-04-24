@@ -1,16 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import axios from "axios";
+import { impersonateFetch } from "../../utils/impersonate-fetch.js";
 import { searchAustLii } from "../../services/austlii.js";
 import { AUSTLII_SEARCH_HTML } from "../fixtures/index.js";
 
-vi.mock("axios");
-const mockedAxios = vi.mocked(axios, true);
+vi.mock("../../utils/impersonate-fetch.js", () => ({
+  impersonateFetch: vi.fn(),
+  warmupSession: vi.fn().mockResolvedValue(undefined),
+}));
+const mockedFetch = vi.mocked(impersonateFetch);
 
 describe("searchAustLii (mocked)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockedAxios.get.mockResolvedValue({ data: AUSTLII_SEARCH_HTML, status: 200 });
-    mockedAxios.isAxiosError.mockReturnValue(false);
+    mockedFetch.mockResolvedValue({
+      status: 200,
+      statusText: "OK",
+      headers: { "content-type": "text/html" },
+      data: Buffer.from(AUSTLII_SEARCH_HTML),
+    });
   });
 
   it("should parse case results from HTML correctly", async () => {
@@ -64,9 +71,7 @@ describe("searchAustLii (mocked)", () => {
   });
 
   it("should throw on network failure", async () => {
-    const axiosError = new Error("Network Error");
-    mockedAxios.get.mockRejectedValue(axiosError);
-    mockedAxios.isAxiosError.mockReturnValue(true);
+    mockedFetch.mockRejectedValue(new Error("Network Error"));
 
     await expect(searchAustLii("negligence", { type: "case" })).rejects.toThrow(
       "AustLII search failed",
@@ -75,8 +80,8 @@ describe("searchAustLii (mocked)", () => {
 
   it("should build correct search URL with jurisdiction filter", async () => {
     await searchAustLii("negligence", { type: "case", jurisdiction: "vic" });
-    expect(mockedAxios.get).toHaveBeenCalledTimes(1);
-    const calledUrl = String(mockedAxios.get.mock.calls[0]?.[0] ?? "");
+    expect(mockedFetch).toHaveBeenCalledTimes(1);
+    const calledUrl = String(mockedFetch.mock.calls[0]?.[0] ?? "");
     expect(calledUrl).toContain("mask_path=au%2Fcases%2Fvic");
   });
 });
