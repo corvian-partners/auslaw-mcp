@@ -40,11 +40,13 @@ const CURL_BIN = process.env.CURL_IMPERSONATE_BIN ?? "curl_chrome124";
 // to Node's fetch. Production runs in the Docker image which ships the
 // lexiforest musl build, so this fallback only fires in dev/test.
 let _curlAvailable: boolean | null = null;
+let _curlVersion: string | null = null;
 async function curlAvailable(): Promise<boolean> {
   if (_curlAvailable !== null) return _curlAvailable;
   try {
-    await execFileAsync(CURL_BIN, ["--version"], { timeout: 5_000 });
+    const { stdout } = await execFileAsync(CURL_BIN, ["--version"], { timeout: 5_000 });
     _curlAvailable = true;
+    _curlVersion = stdout.split("\n")[0]?.trim() ?? null;
   } catch {
     _curlAvailable = false;
     logger.warn(
@@ -52,6 +54,16 @@ async function curlAvailable(): Promise<boolean> {
     );
   }
   return _curlAvailable;
+}
+
+/** Diagnostics: whether the curl-impersonate binary is present and its version. */
+export async function curlImpersonateStatus(): Promise<{
+  binary: string;
+  available: boolean;
+  version: string | null;
+}> {
+  const available = await curlAvailable();
+  return { binary: CURL_BIN, available, version: _curlVersion };
 }
 
 async function fetchFallback(

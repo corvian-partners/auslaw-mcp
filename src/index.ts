@@ -7,6 +7,7 @@ import {
   impersonateFetch,
   warmupSession,
   detectCloudflareChallenge,
+  curlImpersonateStatus,
 } from "./utils/impersonate-fetch.js";
 import * as cheerio from "cheerio";
 
@@ -700,6 +701,7 @@ async function verifyBypassOnStartup(): Promise<void> {
  * Exposed at `/diag/egress` — not authenticated, but returns no secrets.
  */
 interface EgressReport {
+  curlImpersonate: { binary: string; available: boolean; version: string | null };
   egress: { ip?: string; asn?: string; country?: string; error?: string };
   austliiRootImpersonated: { status: number; challenge: string | null; ms: number; error?: string };
   austliiRootPlainFetch: { status: number; challenge: string | null; ms: number; error?: string };
@@ -765,7 +767,8 @@ async function probeUrl(
 
 async function buildEgressReport(): Promise<EgressReport> {
   const searchUrl = `${config.austlii.searchBase}?meta=%2Fau&method=auto&query=test`;
-  const [egress, rootImp, rootPlain, searchImp] = await Promise.all([
+  const [curl, egress, rootImp, rootPlain, searchImp] = await Promise.all([
+    curlImpersonateStatus(),
     probeEgressIp(),
     probeUrl("https://www.austlii.edu.au/", true),
     probeUrl("https://www.austlii.edu.au/", false),
@@ -795,7 +798,17 @@ async function buildEgressReport(): Promise<EgressReport> {
   else if (!rootPlainOk && rootImpOk)
     verdict = "TLS fingerprint bypass is load-bearing — plain fetch blocked, impersonated OK.";
 
+  // Binary-presence override: if curl-impersonate isn't available in the
+  // container, both "impersonated" probes actually hit the plain fetch
+  // fallback — all three rows converge and the IP-reputation verdict is
+  // misleading. Surface that plainly.
+  if (!curl.available) {
+    verdict =
+      "curl-impersonate binary NOT present in container — all probes fell back to plain Node fetch. This is a build/container issue, not a CF or IP issue. Verify the Docker image actually installed /usr/local/bin/curl_chrome124.";
+  }
+
   return {
+    curlImpersonate: curl,
     egress,
     austliiRootImpersonated: rootImp,
     austliiRootPlainFetch: rootPlain,
