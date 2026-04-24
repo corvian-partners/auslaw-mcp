@@ -1,5 +1,10 @@
 [build]
-builder = "NIXPACKS"
+# Dockerfile builder required: the Dockerfile installs curl-impersonate
+# (lexiforest chrome124 profile) and Tesseract, both of which Nixpacks
+# cannot provide. Without the Dockerfile, AustLII's Cloudflare JA4 gate
+# 403s every request because the TLS fingerprint bypass binary is absent.
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
 
 [deploy]
 healthcheckPath = "/health"
