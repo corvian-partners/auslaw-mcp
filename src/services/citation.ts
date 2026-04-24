@@ -6,7 +6,7 @@
  * AGLC4-compliant citation parsing, formatting, validation, and normalisation.
  */
 
-import axios from "axios";
+import { impersonateFetch, warmupSession } from "../utils/impersonate-fetch.js";
 import {
   NEUTRAL_CITATION_PATTERN,
   REPORTED_CITATION_PATTERNS,
@@ -155,16 +155,21 @@ export async function validateCitation(citation: string): Promise<CitationValida
   }
   const url = `https://www.austlii.edu.au/${path}/${year}/${num}.html`;
   try {
-    await withRetry(
+    await warmupSession();
+    const r = await withRetry(
       async () => {
         await austliiRateLimiter.throttle();
-        return axios.head(url, {
+        return impersonateFetch(url, {
+          method: "HEAD",
           timeout: 10000,
           headers: austliiHeadHeaders(),
         });
       },
       { label: `validate citation ${normalised}`, retries: 1 },
     );
+    if (r.status >= 400) {
+      return { valid: false, message: "Citation not found on AustLII", austliiUrl: url };
+    }
     return { valid: true, canonicalCitation: normalised, austliiUrl: url };
   } catch {
     return {
