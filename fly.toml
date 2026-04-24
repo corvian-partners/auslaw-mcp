@@ -57,4 +57,4 @@ NODE_ENV = "production"
 
 [[vm]]
   size = "shared-cpu-1x"
-  memory = "512mb"
+  memory = "1gb"  # Tesseract OCR spikes ~300–500 MB on scanned PDFs; 512mb OOMs.
