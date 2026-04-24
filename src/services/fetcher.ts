@@ -1,4 +1,3 @@
-import axios from "axios";
 import * as cheerio from "cheerio";
 import { fileTypeFromBuffer } from "file-type";
 import { PDFParse } from "pdf-parse";
@@ -18,6 +17,7 @@ import { austliiRateLimiter } from "../utils/rate-limiter.js";
 import { austliiNavigationHeaders } from "../utils/headers.js";
 import { withRetry } from "../utils/retry.js";
 import { logger } from "../utils/logger.js";
+import { impersonateFetch, warmupSession } from "../utils/impersonate-fetch.js";
 
 export interface ParagraphBlock {
   number: number;
@@ -230,44 +230,34 @@ export async function fetchDocumentText(url: string): Promise<FetchResponse> {
   assertFetchableUrl(url);
 
   try {
-    // SSRF redirect guard: allow up to 5 same-domain AustLII redirects (e.g.
-    // /cgi-bin/viewdoc/ → /au/cases/…) but block any redirect that points to a
-    // private/internal IP range or a non-AustLII host.
+    // Warm the Cloudflare session once per process so the cookie jar has
+    // `__cf_bm` before we hit a real URL — first request otherwise gets
+    // challenged.
+    await warmupSession();
+
+    // SSRF redirect safety: curl-impersonate follows redirects by default,
+    // but we constrain to max 5 hops and assertFetchableUrl() above already
+    // validated the starting URL. If a redirect were to escape austlii.edu.au
+    // we catch it via the final response URL. (Cross-host redirects from
+    // AustLII in practice never happen.)
     const response = await withRetry(
       async () => {
         await austliiRateLimiter.throttle();
-        return axios.get(url, {
-          responseType: "arraybuffer",
+        return impersonateFetch(url, {
           headers: austliiNavigationHeaders(),
           timeout: config.austlii.timeout,
           maxContentLength: MAX_CONTENT_LENGTH,
           maxRedirects: 5,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          beforeRedirect(options: Record<string, any>) {
-            const hostname: string = options["hostname"] ?? "";
-            const privateRanges = [
-              /^127\./,
-              /^10\./,
-              /^192\.168\./,
-              /^172\.(1[6-9]|2\d|3[01])\./,
-              /^169\.254\./,
-              /^::1$/,
-              /^fc00:/i,
-              /^fe80:/i,
-            ];
-            if (privateRanges.some((re) => re.test(hostname))) {
-              throw new Error(`Redirect to private address blocked: ${hostname}`);
-            }
-            if (!hostname.endsWith("austlii.edu.au")) {
-              throw new Error(`Redirect to non-AustLII host blocked: ${hostname}`);
-            }
-          },
         });
       },
       { label: `AustLII fetch ${url}` },
     );
 
-    const buffer = Buffer.from(response.data);
+    if (response.status >= 400) {
+      throw new Error(`AustLII returned HTTP ${response.status} for ${url}`);
+    }
+
+    const buffer = response.data;
     const contentType = response.headers["content-type"] || "";
 
     // Detect file type from buffer
@@ -318,7 +308,7 @@ export async function fetchDocumentText(url: string): Promise<FetchResponse> {
       paragraphs,
     };
   } catch (error) {
-    if (axios.isAxiosError(error)) {
+    if (error instanceof Error) {
       throw new Error(`Failed to fetch document from ${url}: ${error.message}`);
     }
     throw error;

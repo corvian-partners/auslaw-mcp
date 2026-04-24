@@ -1,10 +1,10 @@
-import axios from "axios";
 import * as cheerio from "cheerio";
 import { config } from "../config.js";
 import { REPORTED_CITATION_PATTERNS } from "../constants.js";
 import { austliiRateLimiter } from "../utils/rate-limiter.js";
 import { austliiSearchHeaders } from "../utils/headers.js";
 import { withRetry } from "../utils/retry.js";
+import { impersonateFetch, warmupSession } from "../utils/impersonate-fetch.js";
 
 export interface SearchResult {
   title: string;
@@ -355,10 +355,11 @@ export async function searchAustLii(
       searchUrl.searchParams.set("view", "date-latest");
     }
 
+    await warmupSession();
     const response = await withRetry(
       async () => {
         await austliiRateLimiter.throttle();
-        return axios.get(searchUrl.toString(), {
+        return impersonateFetch(searchUrl.toString(), {
           headers: austliiSearchHeaders(),
           timeout: config.austlii.timeout,
         });
@@ -370,7 +371,7 @@ export async function searchAustLii(
       throw new Error(`AustLII search returned HTTP ${response.status}`);
     }
 
-    const html = response.data;
+    const html = response.data.toString("utf8");
     const $ = cheerio.load(html);
     const results: SearchResult[] = [];
 
@@ -485,7 +486,7 @@ export async function searchAustLii(
 
     return finalResults.slice(0, limit);
   } catch (error) {
-    if (axios.isAxiosError(error)) {
+    if (error instanceof Error) {
       throw new Error(`AustLII search failed: ${error.message}`);
     }
     throw error;

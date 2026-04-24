@@ -6,8 +6,6 @@
  * or a 410 is just latency.
  */
 
-import axios from "axios";
-
 import { logger } from "./logger.js";
 
 export interface RetryOptions {
@@ -18,13 +16,18 @@ export interface RetryOptions {
 }
 
 function isTransient(err: unknown): boolean {
-  if (axios.isAxiosError(err)) {
-    // No response at all → network/DNS/TLS/timeout.
-    if (!err.response) return true;
-    const status = err.response.status;
+  // Errors thrown by impersonateFetch include the status code in their
+  // message when it's a non-2xx response (e.g. "AustLII returned HTTP 502").
+  // For network/timeout/DNS/TLS failures the message will lack a status.
+  if (!(err instanceof Error)) return false;
+  const msg = err.message;
+  const statusMatch = msg.match(/HTTP (\d{3})/);
+  if (statusMatch) {
+    const status = parseInt(statusMatch[1]!, 10);
     return status >= 500 || status === 429 || status === 408;
   }
-  return false;
+  // No status → treat as a transport failure and retry.
+  return /timeout|timed out|ECONN|ENOTFOUND|EAI_AGAIN|impersonate fetch failed/i.test(msg);
 }
 
 export async function withRetry<T>(fn: () => Promise<T>, options: RetryOptions = {}): Promise<T> {
