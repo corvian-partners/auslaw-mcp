@@ -7,6 +7,7 @@ Model Context Protocol (MCP) server for Australian and New Zealand legal researc
 ## Features
 
 ### Current Capabilities
+
 - ✅ **Case law search**: Natural language queries across all Australian and NZ jurisdictions
 - ✅ **All jurisdictions**: Commonwealth, all States/Territories (VIC, NSW, QLD, SA, WA, TAS, NT, ACT), and New Zealand
 - ✅ **Intelligent search relevance**: Auto-detects case name queries vs topic searches
@@ -37,14 +38,14 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for the full development history and futu
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | System architecture, deployment topology, CI/CD pipeline, production patterns |
-| [DECISIONS.md](docs/DECISIONS.md) | Architectural decision records (ADRs) with context and consequences |
-| [AGENT-GUIDE.md](docs/AGENT-GUIDE.md) | Agent-facing usage guide with tool catalog and examples |
-| [DOCKER.md](docs/DOCKER.md) | Docker deployment guide |
-| [ROADMAP.md](docs/ROADMAP.md) | Development history and future plans |
-| [jade-gwt-protocol.md](docs/jade-gwt-protocol.md) | jade.io GWT-RPC reverse-engineering details |
+| Document                                          | Description                                                                   |
+| ------------------------------------------------- | ----------------------------------------------------------------------------- |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md)           | System architecture, deployment topology, CI/CD pipeline, production patterns |
+| [DECISIONS.md](docs/DECISIONS.md)                 | Architectural decision records (ADRs) with context and consequences           |
+| [AGENT-GUIDE.md](docs/AGENT-GUIDE.md)             | Agent-facing usage guide with tool catalog and examples                       |
+| [DOCKER.md](docs/DOCKER.md)                       | Docker deployment guide                                                       |
+| [ROADMAP.md](docs/ROADMAP.md)                     | Development history and future plans                                          |
+| [jade-gwt-protocol.md](docs/jade-gwt-protocol.md) | jade.io GWT-RPC reverse-engineering details                                   |
 
 ## Quick Start
 
@@ -58,6 +59,7 @@ npm run dev  # hot reload for local development
 ```
 
 To build for production:
+
 ```bash
 npm run build
 npm start
@@ -92,9 +94,11 @@ kubectl apply -f k8s/
 See [k8s/README.md](k8s/README.md) for complete Kubernetes deployment guide.
 
 ## MCP Registration
+
 Configure your MCP-compatible client (eg. Claude Desktop, Cursor) to launch the compiled server.
 
 For Claude Desktop, edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
 ```json
 {
   "mcpServers": {
@@ -179,6 +183,7 @@ Once the MCP is connected, you can ask an AI assistant like Claude natural langu
 ## Available Tools
 
 ### search_cases
+
 Search Australian and New Zealand case law.
 
 **Parameters:**
@@ -206,6 +211,7 @@ Search Australian and New Zealand case law.
 **Examples:**
 
 Find a specific case:
+
 ```json
 {
   "query": "Donoghue v Stevenson",
@@ -215,6 +221,7 @@ Find a specific case:
 ```
 
 Recent NSW cases on a topic:
+
 ```json
 {
   "query": "adverse possession",
@@ -225,6 +232,7 @@ Recent NSW cases on a topic:
 ```
 
 Exact phrase search:
+
 ```json
 {
   "query": "duty of care",
@@ -235,6 +243,7 @@ Exact phrase search:
 ```
 
 Pagination (get results 51-100):
+
 ```json
 {
   "query": "contract breach",
@@ -244,6 +253,7 @@ Pagination (get results 51-100):
 ```
 
 ### search_legislation
+
 Search Australian and New Zealand legislation.
 
 **Parameters:**
@@ -258,6 +268,7 @@ Search Australian and New Zealand legislation.
 | `format` | No | `json` (default), `text`, `markdown`, `html` |
 
 **Example:**
+
 ```json
 {
   "query": "Privacy Act",
@@ -268,6 +279,7 @@ Search Australian and New Zealand legislation.
 ```
 
 ### fetch_document_text
+
 Fetch full text from a case or legislation URL. Supports AustLII HTML, PDF with OCR fallback, and jade.io authenticated fetch via GWT-RPC (requires `JADE_SESSION_COOKIE`).
 
 **Parameters:**
@@ -277,6 +289,7 @@ Fetch full text from a case or legislation URL. Supports AustLII HTML, PDF with 
 | `format` | No | `json` (default), `text`, `markdown`, `html` |
 
 **Example:**
+
 ```json
 {
   "url": "https://www.austlii.edu.au/cgi-bin/viewdoc/au/cases/cth/HCA/1992/23.html"
@@ -284,6 +297,7 @@ Fetch full text from a case or legislation URL. Supports AustLII HTML, PDF with 
 ```
 
 ### format_citation
+
 Format an Australian case citation per AGLC4 rules.
 
 **Parameters:**
@@ -296,6 +310,7 @@ Format an Australian case citation per AGLC4 rules.
 | `style` | No | `combined` (default), `neutral`, or `reported` |
 
 **Example:**
+
 ```json
 {
   "title": "Mabo v Queensland (No 2)",
@@ -308,6 +323,7 @@ Format an Australian case citation per AGLC4 rules.
 **Output:** `Mabo v Queensland (No 2) [1992] HCA 23, (1992) 175 CLR 1 at [64]`
 
 ### validate_citation
+
 Validate a neutral citation by checking it exists on AustLII.
 
 **Parameters:**
@@ -318,6 +334,7 @@ Validate a neutral citation by checking it exists on AustLII.
 **Returns:** `{ valid, canonicalCitation, austliiUrl, message }`
 
 ### generate_pinpoint
+
 Fetch a judgment from AustLII and generate a pinpoint citation to a specific paragraph.
 
 **Parameters:**
@@ -328,9 +345,10 @@ Fetch a judgment from AustLII and generate a pinpoint citation to a specific par
 | `phrase` | No* | Phrase to search for within paragraphs |
 | `caseCitation` | No | Case citation to prepend (e.g. `[1992] HCA 23`) |
 
-*At least one of `paragraphNumber` or `phrase` is required.
+\*At least one of `paragraphNumber` or `phrase` is required.
 
 **Example:**
+
 ```json
 {
   "url": "https://www.austlii.edu.au/cgi-bin/viewdoc/au/cases/cth/HCA/1992/23.html",
@@ -342,6 +360,7 @@ Fetch a judgment from AustLII and generate a pinpoint citation to a specific par
 **Output:** `{ paragraphNumber: 64, pinpointString: "at [64]", fullCitation: "[1992] HCA 23 at [64]" }`
 
 ### search_by_citation
+
 Find a case by its citation. If a neutral citation is detected, validates against AustLII directly; otherwise falls back to text search.
 
 **Parameters:**
@@ -351,6 +370,7 @@ Find a case by its citation. If a neutral citation is detected, validates agains
 | `format` | No | `json` (default), `text`, `markdown`, `html` |
 
 ### resolve_jade_article
+
 Resolve metadata for a jade.io article by its numeric ID.
 
 **Parameters:**
@@ -359,6 +379,7 @@ Resolve metadata for a jade.io article by its numeric ID.
 | `articleId` | Yes | jade.io article ID (integer) |
 
 ### jade_citation_lookup
+
 Generate a jade.io lookup URL for a given neutral citation.
 
 **Parameters:**
@@ -368,27 +389,29 @@ Generate a jade.io lookup URL for a given neutral citation.
 
 ## Jurisdictions
 
-| Code | Jurisdiction |
-|------|-------------|
-| `cth` | Commonwealth of Australia |
+| Code      | Jurisdiction                   |
+| --------- | ------------------------------ |
+| `cth`     | Commonwealth of Australia      |
 | `federal` | Federal courts (alias for cth) |
-| `vic` | Victoria |
-| `nsw` | New South Wales |
-| `qld` | Queensland |
-| `sa` | South Australia |
-| `wa` | Western Australia |
-| `tas` | Tasmania |
-| `nt` | Northern Territory |
-| `act` | Australian Capital Territory |
-| `nz` | New Zealand |
-| `other` | All jurisdictions (no filter) |
+| `vic`     | Victoria                       |
+| `nsw`     | New South Wales                |
+| `qld`     | Queensland                     |
+| `sa`      | South Australia                |
+| `wa`      | Western Australia              |
+| `tas`     | Tasmania                       |
+| `nt`      | Northern Territory             |
+| `act`     | Australian Capital Territory   |
+| `nz`      | New Zealand                    |
+| `other`   | All jurisdictions (no filter)  |
 
 ## Running Tests
+
 ```bash
 npm test
 ```
 
 Test scenarios include:
+
 1. **Negligence and duty of care** - Personal injury law searches
 2. **Contract disputes** - Commercial law and breach of contract
 3. **Constitutional law** - High Court constitutional matters
@@ -399,44 +422,63 @@ Test scenarios include:
 
 ```
 src/
-├── index.ts              # MCP server & tool registration (9 tools)
-├── config.ts             # Configuration management
-├── constants.ts          # Citation patterns, court codes, reporters
-├── errors.ts             # Custom error classes
-├── services/
-│   ├── austlii.ts        # AustLII search and authority scoring
-│   ├── citation.ts       # AGLC4 citation formatting, validation, pinpoints
-│   ├── fetcher.ts        # Document retrieval (HTML, PDF, OCR, jade.io)
-│   ├── jade.ts           # jade.io article resolution and enrichment
-│   └── jade-gwt.ts       # GWT-RPC utilities (buildAvd2Request, encodeGwtInt, parseAvd2Response)
-├── utils/
-│   ├── formatter.ts      # MCP response formatting (json/text/markdown/html)
-│   ├── logger.ts         # Structured levelled logging
-│   ├── rate-limiter.ts   # Token bucket rate limiter (AustLII, jade.io)
-│   └── url-guard.ts      # SSRF protection (HTTPS-only, allowlisted hosts)
-└── test/
-    ├── jade.test.ts       # jade.io integration tests
-    ├── scenarios.test.ts  # End-to-end search scenarios (live network)
-    ├── fixtures/          # Static HTML fixtures for deterministic tests
-    ├── performance/       # Performance benchmarks
-    └── unit/              # Unit tests (~163 test cases)
-        ├── austlii.test.ts
-        ├── austlii-mock.test.ts
-        ├── citation.test.ts
-        ├── config.test.ts
-        ├── constants.test.ts
-        ├── errors.test.ts
-        ├── fetcher.test.ts
-        ├── fetcher-mock.test.ts
-        ├── formatter.test.ts
-        ├── jade-gwt.test.ts
-        ├── logger.test.ts
-        ├── rate-limiter.test.ts
-        └── url-guard.test.ts
+├── services
+│   ├── austlii.ts # AustLII search integration
+│   ├── citation.ts
+│   └── fetcher.ts # Document text retrieval (HTML/PDF/OCR)
+├── test
+│   ├── fixtures
+│   │   ├── austlii-judgment.html
+│   │   ├── austlii-search-response.html
+│   │   ├── citator-mabo.txt
+│   │   ├── index.ts
+│   │   ├── jade-article-response.html
+│   │   ├── propose-citables-kozarov.txt
+│   │   ├── propose-citables-mabo.txt
+│   │   ├── propose-citables-rice.txt
+│   │   └── propose-citables-rogers.txt
+│   ├── performance
+│   │   └── search-performance.test.ts
+│   ├── unit
+│   │   ├── austlii-mock.test.ts
+│   │   ├── austlii.test.ts
+│   │   ├── citation.test.ts
+│   │   ├── config.test.ts
+│   │   ├── constants.test.ts
+│   │   ├── fetcher-mock.test.ts
+│   │   ├── fetcher.test.ts
+│   │   ├── formatter.test.ts
+│   │   ├── logger.test.ts
+│   │   ├── rate-limiter.test.ts
+│   │   └── url-guard.test.ts
+│   └── scenarios.test.ts
+├── utils
+│   ├── formatter.ts # Output formatting (JSON/text/markdown/html)
+│   ├── headers.ts
+│   ├── logger.ts # Logging utility
+│   ├── rate-limiter.ts
+│   ├── retry.ts
+│   └── url-guard.ts
+├── config.ts # Configuration management
+├── constants.ts # Shared constants
+└── index.ts # MCP server & tool registration
 
-plans/                    # Session implementation plans (git-tracked)
-k8s/                      # Kubernetes deployment manifests
-docs/                     # Architecture, Docker, and roadmap docs
+docs/
+├── AGENT-GUIDE.md
+├── ARCHITECTURE.md
+├── DECISIONS.md
+├── DOCKER.md # Docker deployment guide
+├── jade-gwt-protocol.md
+├── PROJECT-OVERVIEW.md
+└── ROADMAP.md # Development roadmap
+
+k8s/
+├── configmap.yaml # Configuration for k8s
+├── deployment.yaml # Deployment specification
+├── ingress.yaml
+├── namespace.yaml # Kubernetes namespace
+├── README.md # Kubernetes deployment guide
+└── service.yaml # Service definition
 ```
 
 ## Deployment
@@ -444,6 +486,7 @@ docs/                     # Architecture, Docker, and roadmap docs
 ### Docker
 
 Quick start:
+
 ```bash
 ./build.sh              # Build Docker image
 docker-compose up       # Run locally
@@ -454,6 +497,7 @@ See [docs/DOCKER.md](docs/DOCKER.md) for detailed Docker deployment instructions
 ### Kubernetes (k3s)
 
 Quick start:
+
 ```bash
 ./build.sh              # Build and export image
 # Import to k3s nodes (see k8s/README.md)
@@ -512,11 +556,13 @@ Then reference it in your deployment manifest via `envFrom` or `env[].valueFrom.
 This project retrieves legal data from publicly accessible databases.
 
 ### AustLII (Australasian Legal Information Institute)
+
 - Website: https://www.austlii.edu.au
 - Terms of Use: https://www.austlii.edu.au/austlii/terms.html
 - AustLII provides free access to Australian and New Zealand legal materials
 
 ### jade.io
+
 - Users must have their own jade.io subscription
 - This tool does not bypass jade.io's access controls
 - Respects jade.io's terms of service
@@ -524,6 +570,7 @@ This project retrieves legal data from publicly accessible databases.
 ### Fair Use
 
 Please use this tool responsibly:
+
 - Implement reasonable delays between requests
 - Cache results when appropriate
 - Don't overload public legal databases
@@ -534,6 +581,7 @@ Please use this tool responsibly:
 See [CONTRIBUTING.md](CONTRIBUTING.md) for full contribution guidelines, [AGENTS.md](AGENTS.md) for AI agent instructions, and [SECURITY.md](SECURITY.md) for responsible disclosure.
 
 **Key principles**:
+
 - Primary sources only (no journal articles)
 - Citation accuracy is paramount
 - All tests must pass before committing
