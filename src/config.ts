@@ -4,6 +4,7 @@
  * Fails fast at startup if any required variable is missing or invalid.
  */
 
+import path from "node:path";
 import { z } from "zod";
 
 // ── Zod schema ────────────────────────────────────────────────────────────────
@@ -63,6 +64,26 @@ export interface Config {
     outputFormat: string;
     sortBy: string;
   };
+  cache: {
+    /** Base directory for the .auslaw/ cache folder. Defaults to cwd. */
+    dir: string;
+    /** Project name used in bib exports and multi-doc tracking. Defaults to basename of dir. */
+    projectName: string;
+  };
+  sources: {
+    /** Directory where source markdown files are saved. */
+    dir: string;
+    /** When true, fetch_document_text automatically saves a local source copy. */
+    fetchByDefault: boolean;
+  };
+  citedBy: {
+    /** Cache cited-by results from LawCite citator lookups. */
+    enabled: boolean;
+    /** Download source files for the top-N citing cases when caching cited-by results. */
+    downloadSources: boolean;
+    /** Maximum number of citing-case sources to download per lookup. */
+    downloadLimit: number;
+  };
 }
 
 /**
@@ -78,6 +99,10 @@ export function loadConfig(): Config {
     throw new Error(`auslaw-mcp configuration error:\n${issues}`);
   }
   const env = result.data;
+
+  const cacheDir = process.env.AUSLAW_CACHE_DIR ?? process.cwd();
+  const projectName = process.env.AUSLAW_PROJECT_NAME ?? path.basename(cacheDir);
+  const sourcesDir = process.env.AUSLAW_SOURCES_DIR ?? path.join(cacheDir, "sources");
 
   return {
     austlii: {
@@ -101,6 +126,19 @@ export function loadConfig(): Config {
       maxSearchLimit: env.MAX_SEARCH_LIMIT,
       outputFormat: env.DEFAULT_OUTPUT_FORMAT,
       sortBy: env.DEFAULT_SORT_BY,
+    },
+    cache: {
+      dir: cacheDir,
+      projectName,
+    },
+    sources: {
+      dir: sourcesDir,
+      fetchByDefault: process.env.AUSLAW_FETCH_SOURCES !== "false",
+    },
+    citedBy: {
+      enabled: process.env.AUSLAW_CACHE_CITED_BY !== "false",
+      downloadSources: process.env.AUSLAW_DOWNLOAD_CITED_BY_SOURCES !== "false",
+      downloadLimit: parseInt(process.env.AUSLAW_CITED_BY_DOWNLOAD_LIMIT ?? "5", 10) || 5,
     },
   };
 }

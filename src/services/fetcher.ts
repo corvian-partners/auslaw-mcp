@@ -34,6 +34,8 @@ export interface FetchResponse {
   ocrUsed: boolean;
   metadata?: Record<string, string>;
   paragraphs?: ParagraphBlock[];
+  etag?: string;
+  lastModified?: string;
 }
 
 async function extractTextFromPdf(
@@ -268,7 +270,8 @@ export async function fetchDocumentText(url: string): Promise<FetchResponse> {
     );
 
     const buffer = Buffer.from(response.data);
-    const contentType = response.headers["content-type"] || "";
+    const rawContentType = response.headers["content-type"];
+    const contentType = typeof rawContentType === "string" ? rawContentType : "";
 
     // Detect file type from buffer
     const detectedType = await fileTypeFromBuffer(buffer);
@@ -316,6 +319,8 @@ export async function fetchDocumentText(url: string): Promise<FetchResponse> {
       ocrUsed,
       metadata,
       paragraphs,
+      etag: (response.headers["etag"] as string) ?? undefined,
+      lastModified: (response.headers["last-modified"] as string) ?? undefined,
     };
   } catch (error) {
     if (axios.isAxiosError(error)) {
