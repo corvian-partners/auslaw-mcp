@@ -151,7 +151,7 @@ export function formatAGLC4(info: AGLC4FormatInput): string {
   }
 
   if (info.reportedCitation) {
-    result += ` ${info.reportedCitation}`;
+    result += info.neutralCitation ? `, ${info.reportedCitation}` : ` ${info.reportedCitation}`;
   }
 
   if (info.pinpoint) {
