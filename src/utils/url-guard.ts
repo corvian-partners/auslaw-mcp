@@ -1,8 +1,4 @@
-const ALLOWED_HOSTS = new Set([
-  "www.austlii.edu.au",
-  "classic.austlii.edu.au",
-  "austlii.edu.au",
-]);
+const ALLOWED_HOSTS = new Set(["www.austlii.edu.au", "classic.austlii.edu.au", "austlii.edu.au"]);
 
 /**
  * Asserts that a URL is safe to fetch from.
